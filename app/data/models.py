@@ -71,6 +71,8 @@ class Bond(BaseModel):
     currency: str
     day_count_convention: str
     issuer: str
+    country: Optional[str] = None
+    sector: Optional[str] = None
 
 class PortfolioConstraints(BaseModel):
     total_size: float = Field(..., description="Total portfolio size in base currency")

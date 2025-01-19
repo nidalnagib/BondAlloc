@@ -54,6 +54,7 @@ def load_bond_universe(uploaded_file: UploadedFile) -> list[Bond]:
                 # Parse credit rating using the new from_string method
                 credit_rating = CreditRating.from_string(str(row['CreditRating']))
                 
+                # Create base bond object
                 bond = Bond(
                     isin=str(row['ISIN']),  # Ensure ISIN is string
                     clean_price=float(row['CleanPrice']),
@@ -69,6 +70,13 @@ def load_bond_universe(uploaded_file: UploadedFile) -> list[Bond]:
                     day_count_convention=str(row['DayCountConvention']),
                     issuer=str(row['Issuer'])
                 )
+                
+                # Add new attributes if they exist in the file
+                if 'Country' in df.columns:
+                    setattr(bond, 'country', str(row['Country']))
+                if 'Sector' in df.columns:
+                    setattr(bond, 'sector', str(row['Sector']))
+                    
                 bonds.append(bond)
             except Exception as e:
                 error_msg = f"Error loading bond {row.get('ISIN', 'Unknown')}: {str(e)}"
@@ -125,11 +133,34 @@ def main():
                     'Maturity': bond.maturity_date.strftime('%Y-%m-%d'),
                     'Rating': bond.credit_rating.display(),
                     'Issuer': bond.issuer,
+                    'Country': getattr(bond, 'country', 'Unknown'),
+                    'Sector': getattr(bond, 'sector', 'Unknown'),
                     'Min Piece': f"{bond.min_piece:,.0f}",
                     'Increment': f"{bond.increment_size:,.0f}"
                 } for bond in universe])
                 
-                # Sort by YTM descending
+                # Add summary statistics
+                col1, col2 = st.columns(2)
+                with col1:
+                    # Rating distribution
+                    rating_dist = df['Rating'].value_counts()
+                    st.subheader("Rating Distribution")
+                    fig = go.Figure(data=[go.Bar(x=rating_dist.index, y=rating_dist.values)])
+                    fig.update_layout(
+                        xaxis_title="Rating",
+                        yaxis_title="Count",
+                        showlegend=False
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                with col2:
+                    # Sector distribution
+                    sector_dist = df['Sector'].value_counts()
+                    st.subheader("Sector Distribution")
+                    fig = go.Figure(data=[go.Pie(labels=sector_dist.index, values=sector_dist.values)])
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                # Sort by YTM descending and display table
                 df = df.sort_values('YTM', ascending=False)
                 st.dataframe(df, hide_index=True)
     

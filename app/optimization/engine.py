@@ -5,6 +5,12 @@ import logging
 from ..data.models import Bond, PortfolioConstraints, CreditRating, OptimizationResult
 from .solver_manager import SolverManager
 
+#TODO : add constraint by rating
+#TODO : total invested amount notional * dirty price then calculated difference
+#TODO :
+# coupon schedule after optimization#
+# Maturity distribution
+
 # Get logger
 logger = logging.getLogger(__name__)
 
@@ -74,6 +80,7 @@ class PortfolioOptimizer:
         
         # Constraint on number of securities
         constraints.append(cp.sum(binary_vars) <= self.constraints.max_securities)
+        constraints.append(cp.sum(binary_vars) >= self.constraints.min_securities)
         
         # Issuer exposure constraints
         unique_issuers = set(bond.issuer for bond in self.universe)
@@ -194,49 +201,74 @@ class PortfolioOptimizer:
         violations = []
         epsilon = 1e-2  # Small tolerance for numerical precision
         
-        # Number of securities constraint
-        num_securities = sum(1 for weight in portfolio.values() if weight > epsilon)
-        if num_securities > self.constraints.max_securities:
-            violations.append(f"Maximum number of securities constraint violated: {num_securities} > {self.constraints.max_securities}")
-        
-        # Position size constraints
-        for i, bond in enumerate(self.universe):
-            weight = portfolio.get(bond.isin, 0)
-            if weight > epsilon:  # Only check non-zero positions
-                if weight < self.constraints.min_position_size - epsilon:
-                    violations.append(f"Minimum position size constraint violated for bond {bond.isin}: {weight:.4f} < {self.constraints.min_position_size:.4f}")
-                elif weight > self.constraints.max_position_size + epsilon:
-                    violations.append(f"Maximum position size constraint violated for bond {bond.isin}: {weight:.4f} > {self.constraints.max_position_size:.4f}")
-        
-        # Duration constraints
-        duration_vector = np.array([bond.modified_duration for bond in self.universe])
-        portfolio_duration = duration_vector @ np.array([portfolio.get(bond.isin, 0) for bond in self.universe])
+        # Check duration constraints
+        portfolio_duration = self._calculate_portfolio_duration(portfolio)
         if portfolio_duration < self.constraints.target_duration - self.constraints.duration_tolerance - epsilon:
-            violations.append(f"Minimum duration constraint violated: {portfolio_duration:.4f} < {self.constraints.target_duration - self.constraints.duration_tolerance:.4f}")
+            violations.append(
+                f"Duration below target range: {portfolio_duration:.2f} < "
+                f"{self.constraints.target_duration - self.constraints.duration_tolerance:.2f}"
+            )
         elif portfolio_duration > self.constraints.target_duration + self.constraints.duration_tolerance + epsilon:
-            violations.append(f"Maximum duration constraint violated: {portfolio_duration:.4f} > {self.constraints.target_duration + self.constraints.duration_tolerance:.4f}")
+            violations.append(
+                f"Duration above target range: {portfolio_duration:.2f} > "
+                f"{self.constraints.target_duration + self.constraints.duration_tolerance:.2f}"
+            )
         
-        # Rating constraint
+        # Check rating constraints
         portfolio_rating = self._calculate_portfolio_rating(portfolio)
-        min_rating_score = self.constraints.min_rating.value
-        if portfolio_rating > min_rating_score + epsilon:  # Lower score means better rating
-            violations.append(f"Minimum rating constraint violated: {portfolio_rating:.4f} > {min_rating_score:.4f}")
+        if portfolio_rating > self.constraints.min_rating.value + self.constraints.rating_tolerance:
+            violations.append(
+                f"Portfolio rating below minimum: {CreditRating.from_score(portfolio_rating).display()} < "
+                f"{self.constraints.min_rating.display()}"
+            )
         
-        # Yield constraint
-        ytm_vector = np.array([bond.ytm for bond in self.universe])
-        portfolio_yield = ytm_vector @ np.array([portfolio.get(bond.isin, 0) for bond in self.universe])
+        # Check number of securities constraints
+        num_securities = sum(1 for w in portfolio.values() if w > epsilon)
+        if num_securities < self.constraints.min_securities:
+            violations.append(f"Too few securities: {num_securities} < {self.constraints.min_securities}")
+        elif num_securities > self.constraints.max_securities:
+            violations.append(f"Too many securities: {num_securities} > {self.constraints.max_securities}")
+        
+        # Check position size constraints
+        for isin, weight in portfolio.items():
+            if weight > self.constraints.max_position_size + epsilon:
+                violations.append(f"Position {isin} exceeds maximum size: {weight:.4f} > {self.constraints.max_position_size:.4f}")
+            elif weight < self.constraints.min_position_size - epsilon and weight > epsilon:
+                violations.append(f"Position {isin} below minimum size: {weight:.4f} < {self.constraints.min_position_size:.4f}")
+        
+        # Check issuer constraints
+        issuer_exposures = {}
+        for isin, weight in portfolio.items():
+            bond = next(b for b in self.universe if b.isin == isin)
+            issuer_exposures[bond.issuer] = issuer_exposures.get(bond.issuer, 0) + weight
+        
+        for issuer, exposure in issuer_exposures.items():
+            if exposure > self.constraints.max_issuer_exposure + epsilon:
+                violations.append(
+                    f"Issuer {issuer} exposure exceeds maximum: {exposure:.4f} > {self.constraints.max_issuer_exposure:.4f}"
+                )
+        
+        # Check yield constraint
+        portfolio_yield = self._calculate_portfolio_yield(portfolio)
         if portfolio_yield < self.constraints.min_yield - epsilon:
             violations.append(f"Minimum yield constraint violated: {portfolio_yield:.4f} < {self.constraints.min_yield:.4f}")
         
         return violations
 
     def _calculate_portfolio_rating(self, portfolio: Dict[str, float]) -> float:
-        """Calculate weighted average portfolio rating"""
+        """Calculate portfolio rating score"""
         weights = np.array([portfolio.get(bond.isin, 0) for bond in self.universe])
         rating_values = np.array([bond.credit_rating.value for bond in self.universe])
         return float(rating_values @ weights)
-        
-    def _get_rating_score(self, rating: CreditRating) -> int:
-        """Get rating score"""
-        # Use the enum value directly since it's already defined correctly
-        return rating.value
+
+    def _calculate_portfolio_duration(self, portfolio: Dict[str, float]) -> float:
+        """Calculate portfolio duration"""
+        weights = np.array([portfolio.get(bond.isin, 0) for bond in self.universe])
+        durations = np.array([bond.modified_duration for bond in self.universe])
+        return float(durations @ weights)
+
+    def _calculate_portfolio_yield(self, portfolio: Dict[str, float]) -> float:
+        """Calculate portfolio yield"""
+        weights = np.array([portfolio.get(bond.isin, 0) for bond in self.universe])
+        yields = np.array([bond.ytm for bond in self.universe])
+        return float(yields @ weights)
