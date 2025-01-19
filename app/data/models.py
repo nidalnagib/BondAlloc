@@ -47,15 +47,23 @@ class CreditRating(Enum):
         name = self.name
         return name.replace('_PLUS', '+').replace('_MINUS', '-')
         
-    @classmethod
-    def from_score(cls, score: float) -> 'CreditRating':
-        """Convert numerical score to nearest rating"""
-        score = round(score)  # Round to nearest integer
-        try:
-            return next(r for r in cls if r.value == score)
-        except StopIteration:
-            # Return the worst rating if score is too high
-            return cls.D if score > cls.D.value else cls.AAA
+    @staticmethod
+    def from_score(score: float) -> 'CreditRating':
+        """Convert a rating score back to a CreditRating enum"""
+        closest_rating = min(CreditRating, key=lambda x: abs(x.value - score))
+        return closest_rating
+
+    def is_investment_grade(self) -> bool:
+        """Check if rating is investment grade (BBB- or better)"""
+        return self.value <= CreditRating.BBB_MINUS.value
+
+class RatingGrade(str, Enum):
+    INVESTMENT_GRADE = "Investment Grade"
+    HIGH_YIELD = "High Yield"
+
+    @staticmethod
+    def from_rating(rating: CreditRating) -> 'RatingGrade':
+        return RatingGrade.INVESTMENT_GRADE if rating.is_investment_grade() else RatingGrade.HIGH_YIELD
 
 class Bond(BaseModel):
     isin: str
@@ -74,6 +82,10 @@ class Bond(BaseModel):
     country: Optional[str] = None
     sector: Optional[str] = None
 
+    @property
+    def rating_grade(self) -> RatingGrade:
+        return RatingGrade.from_rating(self.credit_rating)
+
 class PortfolioConstraints(BaseModel):
     total_size: float = Field(..., description="Total portfolio size in base currency")
     min_securities: int = Field(..., description="Minimum number of securities")
@@ -88,6 +100,9 @@ class PortfolioConstraints(BaseModel):
     max_issuer_exposure: float = Field(0.1, description="Maximum exposure to single issuer")
     rating_constraints: Dict[CreditRating, Tuple[float, float]] = Field(
         default_factory=dict, description="Min/Max allocation per rating"
+    )
+    grade_constraints: Dict[RatingGrade, Tuple[float, float]] = Field(
+        default_factory=dict, description="Min/Max allocation per rating grade (IG/HY)"
     )
     maturity_bucket_constraints: Dict[str, Tuple[float, float]] = Field(
         default_factory=dict, description="Min/Max allocation per maturity bucket"

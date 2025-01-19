@@ -2,14 +2,10 @@ import cvxpy as cp
 import numpy as np
 from typing import List, Dict, Optional
 import logging
-from ..data.models import Bond, PortfolioConstraints, CreditRating, OptimizationResult
+from ..data.models import Bond, PortfolioConstraints, CreditRating, OptimizationResult, RatingGrade
 from .solver_manager import SolverManager
 
 #TODO : add constraint by rating
-#TODO : total invested amount notional * dirty price then calculated difference
-#TODO :
-# coupon schedule after optimization#
-# Maturity distribution
 
 # Get logger
 logger = logging.getLogger(__name__)
@@ -40,36 +36,71 @@ class PortfolioOptimizer:
     def _setup_constraints(self):
         """Setup optimization constraints"""
         constraints = []
-        
-        # Budget constraint - weights must sum to 1
-        constraints.append(cp.sum(self.weights) == 1)
-        
-        # Non-negativity constraint
-        constraints.append(self.weights >= 0)
-        
-        # Duration constraint with small tolerance for numerical precision
+        logger.info("Setting up optimization constraints")
+
+        # Portfolio weight constraints
+        logger.info("Adding portfolio weight constraints")
+        constraints.append(cp.sum(self.weights) == 1)  # Sum of weights = 1
+        constraints.append(self.weights >= 0)  # No short selling
+
+        # Duration constraints
+        logger.info(f"Adding duration constraints: target={self.constraints.target_duration:.2f}, tolerance={self.constraints.duration_tolerance:.2f}")
         duration_vector = np.array([bond.modified_duration for bond in self.universe])
+        min_duration = min(duration_vector)
+        max_duration = max(duration_vector)
+        logger.info(f"Universe duration range: min={min_duration:.2f}, max={max_duration:.2f}")
+        
+        target_min = self.constraints.target_duration - self.constraints.duration_tolerance
+        target_max = self.constraints.target_duration + self.constraints.duration_tolerance
+        if target_min > max_duration or target_max < min_duration:
+            logger.warning(f"Duration constraint may be infeasible: target range [{target_min:.2f}, {target_max:.2f}] vs universe range [{min_duration:.2f}, {max_duration:.2f}]")
+        
         portfolio_duration = duration_vector @ self.weights
-        epsilon = 1e-4  # Small tolerance for numerical precision
-        constraints.append(portfolio_duration >= self.constraints.target_duration - self.constraints.duration_tolerance - epsilon)
-        constraints.append(portfolio_duration <= self.constraints.target_duration + self.constraints.duration_tolerance + epsilon)
+        constraints.append(portfolio_duration <= self.constraints.target_duration + self.constraints.duration_tolerance)
+        constraints.append(portfolio_duration >= self.constraints.target_duration - self.constraints.duration_tolerance)
+
+        # Rating constraints
+        min_rating_score = float(self.constraints.min_rating.value)  # Convert enum value to float
+        max_rating_score = min_rating_score + self.constraints.rating_tolerance
+        logger.info(f"Adding rating constraints: min={CreditRating.from_score(min_rating_score).display()}, max={CreditRating.from_score(max_rating_score).display()}")
         
-        # Rating constraint
-        rating_values = np.array([bond.credit_rating.value for bond in self.universe])
-        portfolio_rating = rating_values @ self.weights
-        min_rating_score = self.constraints.min_rating.value
-        constraints.append(portfolio_rating >= min_rating_score)
+        ratings = [bond.credit_rating.value for bond in self.universe]
+        min_rating = min(ratings)
+        max_rating = max(ratings)
+        logger.info(f"Universe rating range: min={CreditRating.from_score(min_rating).display()}, max={CreditRating.from_score(max_rating).display()}")
         
+        if min_rating_score > max_rating:
+            logger.warning(f"Rating constraint may be infeasible: minimum required rating {CreditRating.from_score(min_rating_score).display()} is better than best available rating {CreditRating.from_score(max_rating).display()}")
+        
+        rating_vector = np.array([float(bond.credit_rating.value) for bond in self.universe])  # Convert each rating to float
+        portfolio_rating = rating_vector @ self.weights
+        constraints.append(portfolio_rating <= max_rating_score)
+
         # Yield constraint
+        logger.info(f"Adding minimum yield constraint: {self.constraints.min_yield:.2%}")
         yield_vector = np.array([bond.ytm for bond in self.universe])
+        min_yield = min(yield_vector)
+        max_yield = max(yield_vector)
+        logger.info(f"Universe yield range: min={min_yield:.2%}, max={max_yield:.2%}")
+        
+        if self.constraints.min_yield > max_yield:
+            logger.warning(f"Yield constraint may be infeasible: minimum required yield {self.constraints.min_yield:.2%} is higher than maximum available yield {max_yield:.2%}")
+        
         portfolio_yield = yield_vector @ self.weights
         constraints.append(portfolio_yield >= self.constraints.min_yield)
-        
+
         # Maximum number of securities constraint
+        logger.info(f"Adding security count constraints: min={self.constraints.min_securities}, max={self.constraints.max_securities}")
+        if self.constraints.min_securities * self.constraints.min_position_size > 1:
+            logger.warning(f"Position size constraint may be infeasible: minimum {self.constraints.min_securities} securities at {self.constraints.min_position_size:.1%} each requires {self.constraints.min_securities * self.constraints.min_position_size:.1%} total")
+        if self.constraints.max_securities * self.constraints.max_position_size < 1:
+            logger.warning(f"Position size constraint may be infeasible: maximum {self.constraints.max_securities} securities at {self.constraints.max_position_size:.1%} each allows only {self.constraints.max_securities * self.constraints.max_position_size:.1%} total")
+        
         binary_vars = cp.Variable(len(self.universe), boolean=True)
         M = 1  # Big M value (1 is sufficient since weights are between 0 and 1)
-        
+
         # Link binary variables to weights and enforce position size constraints
+        logger.info(f"Adding position size constraints: min={self.constraints.min_position_size:.2%}, max={self.constraints.max_position_size:.2%}")
         for i in range(len(self.universe)):
             # Weight must be 0 if binary is 0
             constraints.append(self.weights[i] <= M * binary_vars[i])
@@ -77,18 +108,47 @@ class PortfolioOptimizer:
             constraints.append(self.weights[i] >= self.constraints.min_position_size * binary_vars[i])
             # Weight cannot exceed max_position_size
             constraints.append(self.weights[i] <= self.constraints.max_position_size)
-        
+
         # Constraint on number of securities
         constraints.append(cp.sum(binary_vars) <= self.constraints.max_securities)
         constraints.append(cp.sum(binary_vars) >= self.constraints.min_securities)
-        
+
         # Issuer exposure constraints
+        logger.info(f"Adding issuer exposure constraint: max={self.constraints.max_issuer_exposure:.2%}")
         unique_issuers = set(bond.issuer for bond in self.universe)
+        logger.info(f"Found {len(unique_issuers)} unique issuers in universe")
         for issuer in unique_issuers:
+            issuer_bonds = [bond for bond in self.universe if bond.issuer == issuer]
+            if len(issuer_bonds) > 0:
+                logger.info(f"Issuer {issuer}: {len(issuer_bonds)} bonds available")
             issuer_indices = [i for i, bond in enumerate(self.universe) if bond.issuer == issuer]
             issuer_exposure = cp.sum(self.weights[issuer_indices])
             constraints.append(issuer_exposure <= self.constraints.max_issuer_exposure)
-        
+
+        # Grade constraints
+        if self.constraints.grade_constraints:
+            # Only handle High Yield constraints
+            if RatingGrade.HIGH_YIELD in self.constraints.grade_constraints:
+                min_weight, max_weight = self.constraints.grade_constraints[RatingGrade.HIGH_YIELD]
+                logger.info(f"Processing High Yield constraints: min={min_weight:.1%}, max={max_weight:.1%}")
+                
+                hy_indices = [i for i, bond in enumerate(self.universe) if bond.rating_grade == RatingGrade.HIGH_YIELD]
+                logger.info(f"Found {len(hy_indices)} High Yield bonds in universe")
+                
+                # Only add constraint if we have high yield bonds and constraints are meaningful
+                if hy_indices:
+                    hy_exposure = cp.sum(self.weights[hy_indices])
+                    if min_weight > 0:
+                        logger.info(f"Adding minimum High Yield constraint: {min_weight:.1%}")
+                        constraints.append(hy_exposure >= min_weight)
+                    if max_weight < 1:
+                        logger.info(f"Adding maximum High Yield constraint: {max_weight:.1%}")
+                        constraints.append(hy_exposure <= max_weight)
+                elif min_weight > 0:
+                    logger.warning(f"No High Yield bonds available but minimum weight of {min_weight:.1%} required")
+                    return []  # Return empty constraints to indicate infeasibility
+
+        logger.info(f"Total number of constraints: {len(constraints)}")
         return constraints
 
     def optimize(self) -> OptimizationResult:
@@ -103,6 +163,18 @@ class PortfolioOptimizer:
             # Setup objective and constraints
             objective, additional_constraints = self._setup_objective()
             constraints = self._setup_constraints()
+            
+            # Check if constraints are empty (indicating infeasibility)
+            if not constraints:
+                logger.error("Problem is infeasible due to invalid constraints")
+                return OptimizationResult(
+                    success=False,
+                    portfolio={},
+                    metrics={},
+                    constraints_satisfied=False,
+                    constraint_violations=["Invalid constraints - check grade constraints and bond availability"]
+                )
+            
             constraints.extend(additional_constraints)
             
             # Create and solve problem
@@ -189,13 +261,20 @@ class PortfolioOptimizer:
         # Calculate number of securities
         num_securities = sum(1 for w in weights if w > 1e-4)
         
+        # Calculate grade exposures
+        grade_exposures = {}
+        for grade in RatingGrade:
+            grade_indices = [i for i, bond in enumerate(self.universe) if bond.rating_grade == grade]
+            grade_exposures[f"grade_{grade.value}"] = float(sum(weights[i] for i in grade_indices))
+        
         return {
             'yield': portfolio_yield,
             'duration': portfolio_duration,
             'rating': portfolio_rating,
-            'number_of_securities': num_securities
+            'number_of_securities': num_securities,
+            **grade_exposures
         }
-        
+
     def _check_constraint_violations(self, portfolio: Dict[str, float]) -> List[str]:
         """Check if portfolio satisfies all constraints"""
         violations = []
@@ -247,6 +326,19 @@ class PortfolioOptimizer:
                 violations.append(
                     f"Issuer {issuer} exposure exceeds maximum: {exposure:.4f} > {self.constraints.max_issuer_exposure:.4f}"
                 )
+        
+        # Check grade constraints
+        if self.constraints.grade_constraints:
+            # Only handle High Yield constraints
+            if RatingGrade.HIGH_YIELD in self.constraints.grade_constraints:
+                min_weight, max_weight = self.constraints.grade_constraints[RatingGrade.HIGH_YIELD]
+                hy_indices = [i for i, bond in enumerate(self.universe) if bond.rating_grade == RatingGrade.HIGH_YIELD]
+                hy_exposure = sum(portfolio.get(bond.isin, 0) for i, bond in enumerate(self.universe) if i in hy_indices)
+                
+                if min_weight > 0 and hy_exposure < min_weight - epsilon:
+                    violations.append(f"Minimum High Yield exposure not met: {hy_exposure:.2%} < {min_weight:.2%}")
+                if max_weight < 1 and hy_exposure > max_weight + epsilon:
+                    violations.append(f"Maximum High Yield exposure exceeded: {hy_exposure:.2%} > {max_weight:.2%}")
         
         # Check yield constraint
         portfolio_yield = self._calculate_portfolio_yield(portfolio)

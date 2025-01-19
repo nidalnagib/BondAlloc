@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from typing import List, Optional
-from app.data.models import Bond, PortfolioConstraints, CreditRating, OptimizationResult
+from app.data.models import Bond, PortfolioConstraints, CreditRating, OptimizationResult, RatingGrade
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
@@ -105,7 +105,7 @@ def render_constraints_form() -> Optional[PortfolioConstraints]:
                 "Minimum Position Size (%)",
                 min_value=0.0,
                 max_value=100.0,
-                value=2.0,
+                value=1.0,
                 step=0.1,
                 format="%.1f"
             ) / 100.0
@@ -114,7 +114,7 @@ def render_constraints_form() -> Optional[PortfolioConstraints]:
                 "Maximum Position Size (%)",
                 min_value=min_position_size * 100,
                 max_value=100.0,
-                value=max(10.0, min_position_size * 100),
+                value=max(20.0, min_position_size * 100),
                 step=0.1,
                 format="%.1f"
             ) / 100.0
@@ -131,6 +131,36 @@ def render_constraints_form() -> Optional[PortfolioConstraints]:
                 format="%.1f"
             ) / 100.0
 
+        # Grade constraints
+        st.subheader("High Yield Exposure Constraints")
+        st.info("Set minimum and maximum exposure to High Yield bonds")
+        
+        grade_constraints = {}
+        col1, col2 = st.columns(2)
+        with col1:
+            min_hy = st.number_input(
+                "Min High Yield (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=1.0,
+                format="%.1f",
+                key="min_high_yield"
+            ) / 100.0
+        with col2:
+            max_hy = st.number_input(
+                "Max High Yield (%)",
+                min_value=float(min_hy * 100),
+                max_value=100.0,
+                value=40.0,
+                step=1.0,
+                format="%.1f",
+                key="max_high_yield"
+            ) / 100.0
+        
+        if min_hy > 0 or max_hy < 1:
+            grade_constraints[RatingGrade.HIGH_YIELD] = (min_hy, max_hy)
+
         submitted = st.form_submit_button("Run Optimization")
 
         if submitted:
@@ -146,7 +176,8 @@ def render_constraints_form() -> Optional[PortfolioConstraints]:
                     min_yield=min_yield,
                     min_position_size=min_position_size,
                     max_position_size=max_position_size,
-                    max_issuer_exposure=max_issuer_exposure
+                    max_issuer_exposure=max_issuer_exposure,
+                    grade_constraints=grade_constraints
                 )
             except ValidationError as e:
                 st.error(f"Invalid constraints: {str(e)}")
@@ -190,14 +221,28 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
     with col4:
         st.metric("Number of Securities", f"{int(result.metrics['number_of_securities'])}")
 
-    # Create portfolio data
+    # Grade exposures
+    st.subheader("Rating Grade Exposures")
+    grade_cols = st.columns(len(RatingGrade))
+    for i, grade in enumerate(RatingGrade):
+        with grade_cols[i]:
+            exposure = result.metrics.get(f'grade_{grade.value}', 0)
+            st.metric(grade.value, f"{exposure:.1%}")
+
+    # Portfolio breakdown
+    st.subheader("Portfolio Breakdown")
+    col1, col2 = st.columns(2)
+    
+    # Create portfolio dataframe
     portfolio_data = []
+    total_size = result.metrics.get('total_size', 10_000_000)  # Default to 10M if not provided
+    
     for isin, weight in result.portfolio.items():
         bond = next(b for b in universe if b.isin == isin)
         notional = weight * total_size
         min_notional = bond.min_piece
         increment = bond.increment_size
-
+        
         # Calculate rounded notional
         if notional < min_notional:
             warning = f"Position too small (min: {min_notional:,.0f})"
@@ -209,197 +254,212 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
                 warning = f"Rounded up to minimum piece size ({min_notional:,.0f})"
             else:
                 warning = ""
-
+                
         portfolio_data.append({
-            'ISIN': isin,
-            'Issuer': bond.issuer,
-            'Rating': bond.credit_rating.display(),
-            'YTM': bond.ytm,
-            'Duration': bond.modified_duration,
-            'Weight': weight,
-            'Target Notional': notional,
-            'Rounded Notional': rounded_notional,
-            'Min Piece': min_notional,
-            'Increment': increment,
-            'Warning': warning,
-            'Country': getattr(bond, 'country', 'Unknown'),
-            'Coupon': bond.coupon_rate,
-            'Maturity': bond.maturity_date
+            'isin': isin,
+            'weight': weight,
+            'country': bond.country,
+            'rating': bond.credit_rating.display(),
+            'issuer': bond.issuer,
+            'coupon': bond.coupon_rate,
+            'maturity': bond.maturity_date,
+            'ytm': bond.ytm,
+            'duration': bond.modified_duration,
+            'grade': bond.rating_grade.value,
+            'target_notional': notional,
+            'rounded_notional': rounded_notional,
+            'min_piece': min_notional,
+            'increment': increment,
+            'warning': warning
         })
-
-    df = pd.DataFrame(portfolio_data)
+    df_portfolio = pd.DataFrame(portfolio_data)
     
-    # Display visualizations in tabs
-    tab1, tab2, tab3 = st.tabs(["Portfolio Breakdown", "Cash Flows", "Top Holdings"])
+    # Add rounded weight column
+    df_portfolio['rounded_weight'] = df_portfolio['rounded_notional'] / total_size
     
-    with tab1:
-        col1, col2 = st.columns(2)
-        
-        # Country breakdown pie chart
-        with col1:
-            country_weights = df.groupby('Country')['Weight'].sum()
-            fig = px.pie(
-                values=country_weights.values,
-                names=country_weights.index,
-                title='Country Breakdown'
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Rating breakdown
-        with col2:
-            # Add investment grade flag
-            df['Grade'] = df['Rating'].apply(lambda x: 'Investment Grade' if x in ['AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-'] else 'High Yield')
-            
-            # Create two bar charts
-            fig = go.Figure()
-            
-            # Detailed rating breakdown
-            rating_weights = df.groupby('Rating')['Weight'].sum()
-            fig.add_trace(go.Bar(
-                x=rating_weights.index,
-                y=rating_weights.values * 100,
-                name='By Rating',
-                visible=True
-            ))
-            
-            # IG/HY breakdown
-            grade_weights = df.groupby('Grade')['Weight'].sum()
-            fig.add_trace(go.Bar(
-                x=grade_weights.index,
-                y=grade_weights.values * 100,
-                name='By Grade',
-                visible=False
-            ))
-            
-            # Add buttons to switch between views
-            fig.update_layout(
-                title='Rating Breakdown',
-                yaxis_title='Weight (%)',
-                updatemenus=[{
-                    'buttons': [
-                        {'label': 'By Rating', 'method': 'update', 'args': [{'visible': [True, False]}]},
-                        {'label': 'By Grade', 'method': 'update', 'args': [{'visible': [False, True]}]}
-                    ],
-                    'direction': 'down',
-                    'showactive': True,
-                }]
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with tab2:
-        # Cash flow distribution
-        years = range(datetime.now().year, max(df['Maturity']).year + 1)
-        coupons = []
-        redemptions = []
-        
-        for year in years:
-            # Calculate coupon payments
-            year_coupons = sum(
-                row['Rounded Notional'] * row['Coupon']
-                for _, row in df.iterrows()
-                if row['Maturity'].year >= year
-            )
-            coupons.append(year_coupons)
-            
-            # Calculate redemptions
-            year_redemptions = sum(
-                row['Rounded Notional']
-                for _, row in df.iterrows()
-                if row['Maturity'].year == year
-            )
-            redemptions.append(year_redemptions)
-        
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            x=list(years),
-            y=coupons,
-            name='Coupons'
-        ))
-        fig.add_trace(go.Bar(
-            x=list(years),
-            y=redemptions,
-            name='Redemptions'
-        ))
-        
-        fig.update_layout(
-            title='Cash Flow Distribution',
-            xaxis_title='Year',
-            yaxis_title='Amount',
-            barmode='stack'
+    # Country breakdown pie chart
+    with col1:
+        country_weights = df_portfolio.groupby('country')['weight'].sum()
+        fig = px.pie(
+            values=country_weights.values,
+            names=country_weights.index,
+            title='Country Breakdown'
         )
         st.plotly_chart(fig, use_container_width=True)
     
-    with tab3:
+    # Rating breakdown
+    with col2:
+        # Create two bar charts
+        fig = go.Figure()
+        
+        # Detailed rating breakdown
+        rating_weights = df_portfolio.groupby('rating')['weight'].sum()
+        fig.add_trace(go.Bar(
+            x=rating_weights.index,
+            y=rating_weights.values * 100,
+            name='By Rating',
+            visible=True
+        ))
+        
+        # IG/HY breakdown
+        grade_weights = df_portfolio.groupby('grade')['weight'].sum()
+        fig.add_trace(go.Bar(
+            x=grade_weights.index,
+            y=grade_weights.values * 100,
+            name='By Grade',
+            visible=False
+        ))
+        
+        # Add buttons to switch between views
+        fig.update_layout(
+            title='Rating Breakdown',
+            yaxis_title='Weight (%)',
+            updatemenus=[{
+                'buttons': [
+                    {'label': 'By Rating', 'method': 'update', 'args': [{'visible': [True, False]}]},
+                    {'label': 'By Grade', 'method': 'update', 'args': [{'visible': [False, True]}]}
+                ],
+                'direction': 'down',
+                'showactive': True,
+            }]
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Cash flow distribution
+    st.subheader("Cash Flow Distribution")
+    years = range(datetime.now().year, max(df_portfolio['maturity']).year + 1)
+    coupons = []
+    redemptions = []
+    
+    for year in years:
+        # Calculate coupon payments using rounded notionals
+        year_coupons = sum(
+            row['rounded_notional'] * row['coupon']
+            for _, row in df_portfolio.iterrows()
+            if row['maturity'].year >= year
+        )
+        coupons.append(year_coupons)
+        
+        # Calculate redemptions using rounded notionals
+        year_redemptions = sum(
+            row['rounded_notional']
+            for _, row in df_portfolio.iterrows()
+            if row['maturity'].year == year
+        )
+        redemptions.append(year_redemptions)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=list(years),
+        y=coupons,
+        name='Coupons'
+    ))
+    fig.add_trace(go.Bar(
+        x=list(years),
+        y=redemptions,
+        name='Redemptions'
+    ))
+    
+    fig.update_layout(
+        title='Cash Flow Distribution',
+        xaxis_title='Year',
+        yaxis_title='Amount',
+        barmode='stack'
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
         # Top 10 issuers
         st.subheader("Top 10 Issuers")
-        issuer_weights = df.groupby('Issuer')['Weight'].sum().sort_values(ascending=False).head(10)
+        issuer_weights = df_portfolio.groupby('issuer')['weight'].sum().sort_values(ascending=False).head(10)
         issuer_df = pd.DataFrame({
             'Issuer': issuer_weights.index,
-            'Weight': issuer_weights.values
+            'Weight': issuer_weights.values * 100  # Convert to percentage
         })
         st.dataframe(
             issuer_df,
             column_config={
                 'Weight': st.column_config.NumberColumn(
                     'Weight',
-                    format="%.2%"
+                    format="%.1f%%"  # Use % format with one decimal place
                 )
             },
             hide_index=True
         )
-        
+    
+    with col2:
         # Top 10 bonds
         st.subheader("Top 10 Bonds")
-        top_bonds = df.nlargest(10, 'Weight')[
-            ['ISIN', 'Issuer', 'Coupon', 'Maturity', 'YTM', 'Weight']
+        top_bonds = df_portfolio.nlargest(10, 'weight')[
+            ['isin', 'issuer', 'coupon', 'maturity', 'ytm', 'weight']
         ].copy()
-        top_bonds['Coupon'] = top_bonds['Coupon'].map('{:.2%}'.format)
-        top_bonds['YTM'] = top_bonds['YTM'].map('{:.2%}'.format)
-        top_bonds['Weight'] = top_bonds['Weight'].map('{:.2%}'.format)
-        top_bonds['Maturity'] = top_bonds['Maturity'].dt.strftime('%Y-%m-%d')
-        
+        top_bonds['coupon'] = top_bonds['coupon'].map('{:.2%}'.format)
+        top_bonds['ytm'] = top_bonds['ytm'].map('{:.2%}'.format)
+        top_bonds['weight'] = top_bonds['weight'].map('{:.2%}'.format)
+        top_bonds['maturity'] = top_bonds['maturity'].dt.strftime('%Y-%m-%d')
+    
         st.dataframe(top_bonds, hide_index=True)
 
-    # Original portfolio composition table
+    # Complete portfolio
     st.subheader("Complete Portfolio")
-    df_display = df.copy()
-    df_display['YTM'] = df_display['YTM'].map('{:.2%}'.format)
-    df_display['Weight'] = df_display['Weight'].map('{:.2%}'.format)
-    df_display['Target Notional'] = df_display['Target Notional'].map('{:,.0f}'.format)
-    df_display['Rounded Notional'] = df_display['Rounded Notional'].map('{:,.0f}'.format)
-    df_display['Min Piece'] = df_display['Min Piece'].map('{:,.0f}'.format)
-    df_display['Increment'] = df_display['Increment'].map('{:,.0f}'.format)
+    df_display = df_portfolio.copy()
+    df_display['ytm'] = df_display['ytm'].map('{:.2%}'.format)
+    df_display['weight'] = df_display['weight'].map('{:.2%}'.format)
+    df_display['rounded_weight'] = df_display['rounded_weight'].map('{:.2%}'.format)
+    df_display['coupon'] = df_display['coupon'].map('{:.2%}'.format)
+    df_display['maturity'] = df_display['maturity'].dt.strftime('%Y-%m-%d')
+    df_display['target_notional'] = df_display['target_notional'].map('{:,.0f}'.format)
+    df_display['rounded_notional'] = df_display['rounded_notional'].map('{:,.0f}'.format)
+    df_display['min_piece'] = df_display['min_piece'].map('{:,.0f}'.format)
+    df_display['increment'] = df_display['increment'].map('{:,.0f}'.format)
     
     st.dataframe(
         df_display,
         column_config={
-            'ISIN': 'ISIN',
-            'Issuer': 'Issuer',
-            'Rating': 'Rating',
-            'YTM': 'YTM',
-            'Duration': 'Duration',
-            'Weight': 'Weight',
-            'Target Notional': 'Target Notional',
-            'Rounded Notional': 'Rounded Notional',
-            'Min Piece': 'Min Piece',
-            'Increment': 'Increment',
-            'Warning': 'Warning'
+            'isin': 'ISIN',
+            'issuer': 'Issuer',
+            'rating': 'Rating',
+            'ytm': 'YTM',
+            'duration': 'Duration',
+            'weight': 'Target Weight',
+            'rounded_weight': 'Rounded Weight',
+            'target_notional': 'Target Notional',
+            'rounded_notional': 'Rounded Notional',
+            'min_piece': 'Min Piece',
+            'increment': 'Increment',
+            'country': 'Country',
+            'coupon': 'Coupon',
+            'maturity': 'Maturity',
+            'grade': 'Grade',
+            'warning': 'Warning'
         },
         hide_index=True
     )
+    
+    # Add CSV download button
+    csv = df_display.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        "Download Portfolio as CSV",
+        csv,
+        "portfolio.csv",
+        "text/csv",
+        key='download-csv'
+    )
 
     # Display any warnings about position sizes
-    warnings = df[df['Warning'] != '']
+    warnings = df_portfolio[df_portfolio['warning'] != '']
     if not warnings.empty:
         st.warning("Position Size Adjustments Required:")
         for _, row in warnings.iterrows():
-            st.write(f"- {row['ISIN']} ({row['Issuer']}): {row['Warning']}")
+            st.write(f"- {row['isin']} ({row['issuer']}): {row['warning']}")
 
     # Show total portfolio metrics after rounding
-    if len(df) > 0:
-        st.subheader("Portfolio Summary After Rounding")
-        total_target = df['Target Notional'].astype(float).sum()
-        total_rounded = df['Rounded Notional'].astype(float).sum()
+    if len(df_portfolio) > 0:
+        st.subheader("Portfolio Summary")
+        total_target = df_portfolio['target_notional'].sum()
+        total_rounded = df_portfolio['rounded_notional'].sum()
 
         col1, col2, col3 = st.columns(3)
         with col1:
