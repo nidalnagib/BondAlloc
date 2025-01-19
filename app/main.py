@@ -1,3 +1,4 @@
+"""Main application entry point"""
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -8,47 +9,24 @@ from dotenv import load_dotenv
 import os
 import sys
 from streamlit.runtime.uploaded_file_manager import UploadedFile
-import logging
 
 # Add the app directory to Python path
 app_dir = Path(__file__).parent.parent
 sys.path.append(str(app_dir))
 
-# Import app modules
 from app.data.models import Bond, PortfolioConstraints, CreditRating
 from app.optimization.engine import PortfolioOptimizer
 from app.ui.components import (
     render_constraints_form,
     display_optimization_results
 )
+from app.utils.logging_config import setup_logging
 
-# Configure logging
-def setup_logging():
-    """Configure logging for the application"""
-    # Create logs directory if it doesn't exist
-    log_dir = Path(app_dir) / "logs"
-    log_dir.mkdir(exist_ok=True)
-    
-    # Create a log file with timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"bondalloc_{timestamp}.log"
-    
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
+# Set up logging
+logger = setup_logging()
 
 # Load environment variables
 load_dotenv()
-
-# Setup logging
-loggers = setup_logging()
-logger = logging.getLogger('main')
 
 def load_bond_universe(uploaded_file: UploadedFile) -> list[Bond]:
     """Load bond universe from Excel/CSV file"""
