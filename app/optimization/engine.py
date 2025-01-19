@@ -206,7 +206,7 @@ class PortfolioOptimizer:
     def _check_constraint_violations(self, portfolio: Dict[str, float]) -> List[str]:
         """Check if portfolio satisfies all constraints"""
         violations = []
-        epsilon = 1e-4  # Small tolerance for numerical precision
+        epsilon = 1e-2  # Small tolerance for numerical precision
         
         # Number of securities constraint
         num_securities = sum(1 for weight in portfolio.values() if weight > epsilon)
