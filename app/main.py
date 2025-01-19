@@ -85,6 +85,7 @@ def load_bond_universe(uploaded_file: UploadedFile) -> list[Bond]:
 
 def main():
     """Main application entry point"""
+    st.set_page_config(layout="wide")  # Set wide mode
     st.title("Bond Portfolio Optimizer")
     
     # Initialize session state
@@ -114,22 +115,23 @@ def main():
             st.session_state.universe = universe
             st.success(f"Loaded {len(universe)} bonds")
             
-            # Display universe summary with additional columns
-            df = pd.DataFrame([{
-                'ISIN': bond.isin,
-                'Price': f"{bond.clean_price:.2f}",
-                'YTM': f"{bond.ytm:.2%}",
-                'Duration': f"{bond.modified_duration:.2f}",
-                'Maturity': bond.maturity_date.strftime('%Y-%m-%d'),
-                'Rating': bond.credit_rating.display(),
-                'Issuer': bond.issuer,
-                'Min Piece': f"{bond.min_piece:,.0f}",
-                'Increment': f"{bond.increment_size:,.0f}"
-            } for bond in universe])
-            
-            # Sort by YTM descending
-            df = df.sort_values('YTM', ascending=False)
-            st.dataframe(df, hide_index=True)
+            # Display universe summary with additional columns in expander
+            with st.expander("View Bond Universe", expanded=False):
+                df = pd.DataFrame([{
+                    'ISIN': bond.isin,
+                    'Price': f"{bond.clean_price:.2f}",
+                    'YTM': f"{bond.ytm:.2%}",
+                    'Duration': f"{bond.modified_duration:.2f}",
+                    'Maturity': bond.maturity_date.strftime('%Y-%m-%d'),
+                    'Rating': bond.credit_rating.display(),
+                    'Issuer': bond.issuer,
+                    'Min Piece': f"{bond.min_piece:,.0f}",
+                    'Increment': f"{bond.increment_size:,.0f}"
+                } for bond in universe])
+                
+                # Sort by YTM descending
+                df = df.sort_values('YTM', ascending=False)
+                st.dataframe(df, hide_index=True)
     
     # Render constraints form
     constraints = render_constraints_form()

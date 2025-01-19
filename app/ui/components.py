@@ -176,7 +176,11 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
     with col3:
         rating_score = result.metrics['rating']
         rating = CreditRating.from_score(rating_score)
-        st.metric("Rating", rating.display())
+        st.metric(
+            "Rating", 
+            rating.display(),
+            help="Portfolio average rating calculated on a logarithmic scale where AAA=1, AA+=2, AA=3, etc. Lower score means better rating."
+        )
     with col4:
         st.metric("Number of Securities", f"{int(result.metrics['number_of_securities'])}")
 
