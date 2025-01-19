@@ -5,8 +5,6 @@ import logging
 from ..data.models import Bond, PortfolioConstraints, CreditRating, OptimizationResult, RatingGrade
 from .solver_manager import SolverManager
 
-#TODO : add constraint by rating
-
 # Get logger
 logger = logging.getLogger(__name__)
 
