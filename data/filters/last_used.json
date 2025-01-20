@@ -1,0 +1,94 @@
+{
+  "rating": {
+    "type": "categorical",
+    "values": [
+      "A",
+      "A+",
+      "A-",
+      "AA",
+      "AA+",
+      "AA-",
+      "AAA",
+      "B",
+      "B+",
+      "B-",
+      "BB",
+      "BB+",
+      "BB-",
+      "BBB",
+      "BBB+",
+      "BBB-",
+      "C",
+      "CC",
+      "CCC",
+      "CCC+",
+      "CCC-",
+      "D"
+    ]
+  },
+  "country": {
+    "type": "categorical",
+    "values": [
+      "Argentina",
+      "Belgium",
+      "Brazil",
+      "DR Congo",
+      "Ecuador",
+      "France",
+      "Germany",
+      "Indonesia",
+      "Italy",
+      "Japan",
+      "Lebanon",
+      "Mexico",
+      "Netherlands",
+      "Pakistan",
+      "Philippines",
+      "South Africa",
+      "Spain",
+      "Sri Lanka",
+      "Sweden",
+      "Switzerland",
+      "Turkey",
+      "United Kingdom",
+      "United States",
+      "Venezuela",
+      "Vietnam"
+    ]
+  },
+  "sector": {
+    "type": "categorical",
+    "values": [
+      "Airlines",
+      "Automotive",
+      "Banking",
+      "Consumer Staples",
+      "Energy",
+      "Government",
+      "Healthcare",
+      "Materials",
+      "Mining",
+      "Real Estate",
+      "Technology",
+      "Telecommunications",
+      "Utilities"
+    ]
+  },
+  "payment_rank": {
+    "type": "categorical",
+    "values": [
+      "Senior Secured",
+      "Senior Unsecured"
+    ]
+  },
+  "ytm": {
+    "type": "range",
+    "min": 0.037,
+    "max": 0.3
+  },
+  "modified_duration": {
+    "type": "range",
+    "min": 3.0,
+    "max": 7.0
+  }
+}

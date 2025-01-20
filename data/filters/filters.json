@@ -1,0 +1,43 @@
+{
+    "high_yield": {
+        "name": "High Yield Universe",
+        "description": "Bonds rated BB+ and below",
+        "filters": {
+            "rating": {
+                "type": "categorical",
+                "values": ["BB+", "BB", "BB-", "B+", "B", "B-", "CCC+", "CCC", "CCC-"]
+            }
+        }
+    },
+    "investment_grade": {
+        "name": "Investment Grade Universe",
+        "description": "Bonds rated BBB- and above",
+        "filters": {
+            "rating": {
+                "type": "categorical",
+                "values": ["AAA", "AA+", "AA", "AA-", "A+", "A", "A-", "BBB+", "BBB", "BBB-"]
+            }
+        }
+    },
+    "short_duration": {
+        "name": "Short Duration",
+        "description": "Bonds with duration under 3 years",
+        "filters": {
+            "duration": {
+                "type": "range",
+                "max": 3.0
+            }
+        }
+    },
+    "medium_duration": {
+        "name": "Medium Duration",
+        "description": "Bonds with duration between 3 and 7 years",
+        "filters": {
+            "duration": {
+                "type": "range",
+                "min": 3.0,
+                "max": 7.0
+            }
+        }
+    }
+}

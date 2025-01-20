@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from app.data.models import Bond, PortfolioConstraints, CreditRating, OptimizationResult, RatingGrade
 import plotly.express as px
 import plotly.graph_objects as go
@@ -8,7 +8,7 @@ from datetime import datetime
 import numpy as np
 
 
-def render_constraints_form() -> Optional[PortfolioConstraints]:
+def render_constraints_form() -> Tuple[Optional[PortfolioConstraints], bool]:
     """Render form for portfolio constraints"""
     with st.form("constraints_form"):
         st.subheader("Portfolio Constraints")
@@ -165,7 +165,7 @@ def render_constraints_form() -> Optional[PortfolioConstraints]:
 
         if submitted:
             try:
-                return PortfolioConstraints(
+                constraints = PortfolioConstraints(
                     total_size=total_size,
                     min_securities=min_securities,
                     max_securities=max_securities,
@@ -179,11 +179,12 @@ def render_constraints_form() -> Optional[PortfolioConstraints]:
                     max_issuer_exposure=max_issuer_exposure,
                     grade_constraints=grade_constraints
                 )
-            except ValidationError as e:
+                return constraints, True
+            except Exception as e:
                 st.error(f"Invalid constraints: {str(e)}")
-                return None
-
-    return None
+                return None, False
+        
+        return None, False
 
 
 def display_optimization_results(result: OptimizationResult, universe: List[Bond], total_size: float):

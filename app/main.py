@@ -21,6 +21,8 @@ from app.ui.components import (
     render_constraints_form,
     display_optimization_results
 )
+from app.ui.filter_components import render_filter_controls
+from app.filters import FilterManager
 from app.utils.logging_config import setup_logging
 
 # Set up logging
@@ -104,8 +106,13 @@ def main():
         st.session_state.constraints = None
     if 'universe' not in st.session_state:
         st.session_state.universe = None
+    if 'filtered_universe' not in st.session_state:
+        st.session_state.filtered_universe = None
     if 'optimization_result' not in st.session_state:
         st.session_state.optimization_result = None
+    
+    # Initialize filter manager
+    filter_manager = FilterManager()
     
     # File uploader for bond universe
     st.header("Bond Universe")
@@ -125,6 +132,10 @@ def main():
         if universe:
             st.session_state.universe = universe
             st.success(f"Loaded {len(universe)} bonds")
+            
+            # Apply filters
+            filtered_universe = render_filter_controls(universe, filter_manager)
+            st.session_state.filtered_universe = filtered_universe
             
             # Display universe summary with additional columns in expander
             with st.expander("View Bond Universe", expanded=False):
@@ -202,67 +213,74 @@ def main():
                 df = df.sort_values('YTM', ascending=False)
                 st.dataframe(df, hide_index=True)
     
-    # Render constraints form
-    constraints = render_constraints_form()
-    
-    # Run optimization if we have both universe and constraints
-    if st.session_state.universe and constraints:
-        try:
-            optimizer = PortfolioOptimizer(st.session_state.universe, constraints)
-            result = optimizer.optimize()
-            logger.info(f"Optimization completed with status: {result.status}")
+    # Get constraints and check if optimization should run
+    constraints, run_optimization = render_constraints_form()
+    if constraints:
+        st.session_state.constraints = constraints
+        
+        if run_optimization:
+            try:
+                # Use filtered universe if available, otherwise use full universe
+                optimization_universe = st.session_state.filtered_universe or st.session_state.universe
+                
+                if optimization_universe:
+                    optimizer = PortfolioOptimizer(optimization_universe, constraints)
+                    result = optimizer.optimize()
+                    logger.info(f"Optimization completed with status: {result.status}")
+                    
+                    if result.success:
+                        if result.constraints_satisfied:
+                            st.success(f"Optimization completed successfully in {result.solve_time:.2f} seconds")
+                        display_optimization_results(result, optimization_universe, constraints.total_size)
+                        
+                        # Add download buttons for results
+                        portfolio_df = pd.DataFrame([{
+                            'ISIN': isin,
+                            'Weight': weight,
+                            'Notional': weight * constraints.total_size,
+                            'Bond': next(b for b in optimization_universe if b.isin == isin)
+                        } for isin, weight in result.portfolio.items()])
+                        
+                        # Add bond details
+                        portfolio_df['Issuer'] = portfolio_df['Bond'].apply(lambda x: x.issuer)
+                        portfolio_df['Rating'] = portfolio_df['Bond'].apply(lambda x: x.credit_rating.display())
+                        portfolio_df['YTM'] = portfolio_df['Bond'].apply(lambda x: x.ytm)
+                        portfolio_df['Duration'] = portfolio_df['Bond'].apply(lambda x: x.modified_duration)
+                        portfolio_df['Min Piece'] = portfolio_df['Bond'].apply(lambda x: x.min_piece)
+                        portfolio_df['Increment'] = portfolio_df['Bond'].apply(lambda x: x.increment_size)
+                        
+                        # Drop Bond column and sort by Weight
+                        portfolio_df = portfolio_df.drop('Bond', axis=1).sort_values('Weight', ascending=False)
+                        
+                        # Format columns
+                        portfolio_df['Weight'] = portfolio_df['Weight'].apply(lambda x: f"{x:.2%}")
+                        portfolio_df['Notional'] = portfolio_df['Notional'].apply(lambda x: f"{x:,.2f}")
+                        portfolio_df['YTM'] = portfolio_df['YTM'].apply(lambda x: f"{x:.2%}")
+                        portfolio_df['Duration'] = portfolio_df['Duration'].apply(lambda x: f"{x:.2f}")
+                        portfolio_df['Min Piece'] = portfolio_df['Min Piece'].apply(lambda x: f"{x:,.2f}")
+                        portfolio_df['Increment'] = portfolio_df['Increment'].apply(lambda x: f"{x:,.2f}")
+                        
+                        # Convert to CSV
+                        csv = portfolio_df.to_csv(index=False)
+                        st.download_button(
+                            label="Download Portfolio as CSV",
+                            data=csv,
+                            file_name="optimal_portfolio.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.error(f"Optimization failed: {result.status}")
+                        if result.constraint_violations:
+                            st.write("Constraint violations:")
+                            for violation in result.constraint_violations:
+                                st.write(f"- {violation}")
+                else:
+                    st.error("Please load a bond universe before optimizing")
             
-            if result.success:
-                if result.constraints_satisfied:
-                    st.success(f"Optimization completed successfully in {result.solve_time:.2f} seconds")
-                display_optimization_results(result, st.session_state.universe, constraints.total_size)
+            except Exception as e:
+                error_msg = f"Optimization error: {str(e)}"
+                logger.exception(error_msg)
+                st.error(error_msg)
                 
-                # Add download buttons for results
-                portfolio_df = pd.DataFrame([{
-                    'ISIN': isin,
-                    'Weight': weight,
-                    'Notional': weight * constraints.total_size,
-                    'Bond': next(b for b in st.session_state.universe if b.isin == isin)
-                } for isin, weight in result.portfolio.items()])
-                
-                # Add bond details
-                portfolio_df['Issuer'] = portfolio_df['Bond'].apply(lambda x: x.issuer)
-                portfolio_df['Rating'] = portfolio_df['Bond'].apply(lambda x: x.credit_rating.display())
-                portfolio_df['YTM'] = portfolio_df['Bond'].apply(lambda x: x.ytm)
-                portfolio_df['Duration'] = portfolio_df['Bond'].apply(lambda x: x.modified_duration)
-                portfolio_df['Min Piece'] = portfolio_df['Bond'].apply(lambda x: x.min_piece)
-                portfolio_df['Increment'] = portfolio_df['Bond'].apply(lambda x: x.increment_size)
-                
-                # Drop Bond column and sort by Weight
-                portfolio_df = portfolio_df.drop('Bond', axis=1).sort_values('Weight', ascending=False)
-                
-                # Format columns
-                portfolio_df['Weight'] = portfolio_df['Weight'].apply(lambda x: f"{x:.2%}")
-                portfolio_df['Notional'] = portfolio_df['Notional'].apply(lambda x: f"{x:,.0f}")
-                portfolio_df['YTM'] = portfolio_df['YTM'].apply(lambda x: f"{x:.2%}")
-                portfolio_df['Duration'] = portfolio_df['Duration'].apply(lambda x: f"{x:.2f}")
-                portfolio_df['Min Piece'] = portfolio_df['Min Piece'].apply(lambda x: f"{x:,.2f}")
-                portfolio_df['Increment'] = portfolio_df['Increment'].apply(lambda x: f"{x:,.2f}")
-                
-                # Convert to CSV
-                csv = portfolio_df.to_csv(index=False)
-                st.download_button(
-                    label="Download Portfolio as CSV",
-                    data=csv,
-                    file_name="optimal_portfolio.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.error(f"Optimization failed: {result.status}")
-                if result.constraint_violations:
-                    st.write("Constraint violations:")
-                    for violation in result.constraint_violations:
-                        st.write(f"- {violation}")
-                
-        except Exception as e:
-            error_msg = f"Optimization error: {str(e)}"
-            logger.exception(error_msg)
-            st.error(error_msg)
-
 if __name__ == "__main__":
     main()
