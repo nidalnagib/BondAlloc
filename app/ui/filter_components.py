@@ -20,11 +20,91 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
         st.session_state.show_delete_confirmation = False
     if 'filter_to_delete' not in st.session_state:
         st.session_state.filter_to_delete = None
+        
+    # Initialize filter states from active_filters if they don't exist
+    if 'excluded_ratings' not in st.session_state:
+        st.session_state.excluded_ratings = st.session_state.active_filters.get('rating', {}).get('values', []) if st.session_state.active_filters and st.session_state.active_filters.get('rating', {}).get('type') == 'categorical_exclude' else []
+    if 'excluded_issuers' not in st.session_state:
+        st.session_state.excluded_issuers = st.session_state.active_filters.get('issuer', {}).get('values', []) if st.session_state.active_filters and st.session_state.active_filters.get('issuer', {}).get('type') == 'categorical_exclude' else []
+    if 'excluded_countries' not in st.session_state:
+        st.session_state.excluded_countries = st.session_state.active_filters.get('country', {}).get('values', []) if st.session_state.active_filters and st.session_state.active_filters.get('country', {}).get('type') == 'categorical_exclude' else []
+    if 'excluded_sectors' not in st.session_state:
+        st.session_state.excluded_sectors = st.session_state.active_filters.get('sector', {}).get('values', []) if st.session_state.active_filters and st.session_state.active_filters.get('sector', {}).get('type') == 'categorical_exclude' else []
+    if 'excluded_ranks' not in st.session_state:
+        st.session_state.excluded_ranks = st.session_state.active_filters.get('payment_rank', {}).get('values', []) if st.session_state.active_filters and st.session_state.active_filters.get('payment_rank', {}).get('type') == 'categorical_exclude' else []
+    if 'ytm_filter_min' not in st.session_state:
+        st.session_state.ytm_filter_min = min(bond.ytm for bond in universe)
+    if 'ytm_filter_max' not in st.session_state:
+        st.session_state.ytm_filter_max = max(bond.ytm for bond in universe)
+    if 'dur_filter_min' not in st.session_state:
+        st.session_state.dur_filter_min = min(bond.modified_duration for bond in universe)
+    if 'dur_filter_max' not in st.session_state:
+        st.session_state.dur_filter_max = max(bond.modified_duration for bond in universe)
+    
+    # Callback functions to update session state
+    def on_rating_change():
+        st.session_state.active_filters = build_filter_config()
+        
+    def on_issuer_change():
+        st.session_state.active_filters = build_filter_config()
+        
+    def on_country_change():
+        st.session_state.active_filters = build_filter_config()
+        
+    def on_sector_change():
+        st.session_state.active_filters = build_filter_config()
+        
+    def on_rank_change():
+        st.session_state.active_filters = build_filter_config()
+        
+    def on_ytm_change():
+        st.session_state.active_filters = build_filter_config()
+        
+    def on_dur_change():
+        st.session_state.active_filters = build_filter_config()
+    
+    def build_filter_config():
+        config = {}
+        if st.session_state.excluded_ratings:
+            config['rating'] = {
+                'type': 'categorical_exclude',
+                'values': st.session_state.excluded_ratings
+            }
+        if st.session_state.excluded_issuers:
+            config['issuer'] = {
+                'type': 'categorical_exclude',
+                'values': st.session_state.excluded_issuers
+            }
+        if st.session_state.excluded_countries:
+            config['country'] = {
+                'type': 'categorical_exclude',
+                'values': st.session_state.excluded_countries
+            }
+        if st.session_state.excluded_sectors:
+            config['sector'] = {
+                'type': 'categorical_exclude',
+                'values': st.session_state.excluded_sectors
+            }
+        if st.session_state.excluded_ranks:
+            config['payment_rank'] = {
+                'type': 'categorical_exclude',
+                'values': st.session_state.excluded_ranks
+            }
+        config['ytm'] = {
+            'type': 'range',
+            'min': st.session_state.ytm_filter_min,
+            'max': st.session_state.ytm_filter_max
+        }
+        config['modified_duration'] = {
+            'type': 'range',
+            'min': st.session_state.dur_filter_min,
+            'max': st.session_state.dur_filter_max
+        }
+        return config
     
     # Predefined filters
     predefined_filters = filter_manager.get_predefined_filters()
     if predefined_filters:
-        # st.write("Predefined Filters")
         col1, col2 = st.columns([3, 1])
         
         with col1:
@@ -54,6 +134,7 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
                     if success:
                         st.success(f"Filter '{st.session_state.filter_to_delete}' deleted successfully!")
                         st.session_state.selected_predefined_filter = "None"
+                        st.session_state.active_filters = {}
                     else:
                         st.error("Failed to delete filter. Please try again.")
                     st.session_state.show_delete_confirmation = False
@@ -64,7 +145,6 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
                 if st.button("No, Cancel"):
                     st.session_state.show_delete_confirmation = False
                     st.session_state.filter_to_delete = None
-                    st.rerun()
         
         # Update session state and get filter details if changed
         if selected_filter != st.session_state.selected_predefined_filter:
@@ -72,64 +152,94 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
             if selected_filter != "None":
                 filter_config = filter_manager._predefined_filters[selected_filter]['filters']
                 st.session_state.active_filters = filter_config
+                
+                # Update individual filter states
+                st.session_state.excluded_ratings = filter_config.get('rating', {}).get('values', []) if filter_config.get('rating', {}).get('type') == 'categorical_exclude' else []
+                st.session_state.excluded_issuers = filter_config.get('issuer', {}).get('values', []) if filter_config.get('issuer', {}).get('type') == 'categorical_exclude' else []
+                st.session_state.excluded_countries = filter_config.get('country', {}).get('values', []) if filter_config.get('country', {}).get('type') == 'categorical_exclude' else []
+                st.session_state.excluded_sectors = filter_config.get('sector', {}).get('values', []) if filter_config.get('sector', {}).get('type') == 'categorical_exclude' else []
+                st.session_state.excluded_ranks = filter_config.get('payment_rank', {}).get('values', []) if filter_config.get('payment_rank', {}).get('type') == 'categorical_exclude' else []
+                
+                # Update range filter states
+                if 'ytm' in filter_config:
+                    st.session_state.ytm_filter_min = filter_config['ytm'].get('min', min(bond.ytm for bond in universe))
+                    st.session_state.ytm_filter_max = filter_config['ytm'].get('max', max(bond.ytm for bond in universe))
+                if 'modified_duration' in filter_config:
+                    st.session_state.dur_filter_min = filter_config['modified_duration'].get('min', min(bond.modified_duration for bond in universe))
+                    st.session_state.dur_filter_max = filter_config['modified_duration'].get('max', max(bond.modified_duration for bond in universe))
+            else:
+                # Clear all filters when "None" is selected
+                st.session_state.active_filters = {}
+                st.session_state.excluded_ratings = []
+                st.session_state.excluded_issuers = []
+                st.session_state.excluded_countries = []
+                st.session_state.excluded_sectors = []
+                st.session_state.excluded_ranks = []
+                st.session_state.ytm_filter_min = min(bond.ytm for bond in universe)
+                st.session_state.ytm_filter_max = max(bond.ytm for bond in universe)
+                st.session_state.dur_filter_min = min(bond.modified_duration for bond in universe)
+                st.session_state.dur_filter_max = max(bond.modified_duration for bond in universe)
     
     # Custom filters
     with st.expander("Custom Filters", expanded=False):
         col1, col2 = st.columns(2)
         
-        # Get current filter values from session state or defaults
-        current_filters = st.session_state.active_filters
-        
         with col1:
             # Rating filter
             ratings = sorted(list(set(bond.credit_rating.display() for bond in universe)))
             st.write("Ratings Filter")
-            # st.caption("Select ratings to exclude from universe")
-            excluded_ratings = st.multiselect(
+            st.multiselect(
                 "Exclude Ratings",
                 options=ratings,
-                default=current_filters.get('rating', {}).get('values', []) if current_filters and current_filters.get('rating', {}).get('type') == 'categorical_exclude' else [],
-                key="rating_filter"
+                key="excluded_ratings",
+                on_change=on_rating_change
+            )
+            
+            # Issuer filter
+            issuers = sorted(list(set(bond.issuer for bond in universe)))
+            st.write("Issuers Filter")
+            st.multiselect(
+                "Exclude Issuers",
+                options=issuers,
+                key="excluded_issuers",
+                on_change=on_issuer_change
             )
             
             # Country filter
             countries = sorted(list(set(getattr(bond, 'country', 'Unknown') for bond in universe)))
             st.write("Countries Filter")
-            #st.caption("Select countries to exclude from universe")
-            excluded_countries = st.multiselect(
+            st.multiselect(
                 "Exclude Countries",
                 options=countries,
-                default=current_filters.get('country', {}).get('values', []) if current_filters and current_filters.get('country', {}).get('type') == 'categorical_exclude' else [],
-                key="country_filter"
+                key="excluded_countries",
+                on_change=on_country_change
             )
         
         with col2:
             # Sector filter
             sectors = sorted(list(set(getattr(bond, 'sector', 'Unknown') for bond in universe)))
             st.write("Sectors Filter")
-            #st.caption("Select sectors to exclude from universe")
-            excluded_sectors = st.multiselect(
+            st.multiselect(
                 "Exclude Sectors",
                 options=sectors,
-                default=current_filters.get('sector', {}).get('values', []) if current_filters and current_filters.get('sector', {}).get('type') == 'categorical_exclude' else [],
-                key="sector_filter"
+                key="excluded_sectors",
+                on_change=on_sector_change
             )
             
             # Payment Rank filter
             ranks = sorted(list(set(getattr(bond, 'payment_rank', 'Unknown') for bond in universe)))
             st.write("Payment Ranks Filter")
-            #st.caption("Select payment ranks to exclude from universe")
-            excluded_ranks = st.multiselect(
+            st.multiselect(
                 "Exclude Payment Ranks",
                 options=ranks,
-                default=current_filters.get('payment_rank', {}).get('values', []) if current_filters and current_filters.get('payment_rank', {}).get('type') == 'categorical_exclude' else [],
-                key="rank_filter"
+                key="excluded_ranks",
+                on_change=on_rank_change
             )
         
         # YTM range
         ytm_min = min(bond.ytm for bond in universe)
         ytm_max = max(bond.ytm for bond in universe)
-        current_ytm = current_filters.get('ytm', {})
+        current_ytm = st.session_state.active_filters.get('ytm', {})
         ytm_range = st.slider(
             "YTM Range",
             min_value=float(ytm_min * 100),
@@ -138,17 +248,18 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
                 float(current_ytm.get('min', ytm_min) * 100) if current_ytm else float(ytm_min * 100),
                 float(current_ytm.get('max', ytm_max) * 100) if current_ytm else float(ytm_max * 100)
             ),
-            format="%.2f%%"
+            format="%.2f%%",
+            on_change=on_ytm_change
         )
         
         # Convert YTM back to decimal for filter
-        ytm_filter_min = ytm_range[0] / 100
-        ytm_filter_max = ytm_range[1] / 100
+        st.session_state.ytm_filter_min = ytm_range[0] / 100
+        st.session_state.ytm_filter_max = ytm_range[1] / 100
         
         # Duration range
         dur_min = min(bond.modified_duration for bond in universe)
         dur_max = max(bond.modified_duration for bond in universe)
-        current_dur = current_filters.get('modified_duration', {}) or current_filters.get('duration', {})
+        current_dur = st.session_state.active_filters.get('modified_duration', {}) or st.session_state.active_filters.get('duration', {})
         dur_range = st.slider(
             "Duration Range",
             min_value=float(dur_min),
@@ -157,48 +268,13 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
                 float(current_dur.get('min', dur_min)) if current_dur else float(dur_min),
                 float(current_dur.get('max', dur_max)) if current_dur else float(dur_max)
             ),
-            format="%.2f"
+            format="%.2f",
+            on_change=on_dur_change
         )
         
-        # Build filter configuration
-        filter_config = {}
-        
-        # Add categorical exclude filters only if values are selected
-        if excluded_ratings:
-            filter_config['rating'] = {
-                'type': 'categorical_exclude',
-                'values': excluded_ratings
-            }
-        if excluded_countries:
-            filter_config['country'] = {
-                'type': 'categorical_exclude',
-                'values': excluded_countries
-            }
-        if excluded_sectors:
-            filter_config['sector'] = {
-                'type': 'categorical_exclude',
-                'values': excluded_sectors
-            }
-        if excluded_ranks:
-            filter_config['payment_rank'] = {
-                'type': 'categorical_exclude',
-                'values': excluded_ranks
-            }
-            
-        # Add range filters
-        filter_config['ytm'] = {
-            'type': 'range',
-            'min': ytm_filter_min,
-            'max': ytm_filter_max
-        }
-        filter_config['modified_duration'] = {
-            'type': 'range',
-            'min': dur_range[0],
-            'max': dur_range[1]
-        }
-        
-        # Store current filter configuration
-        st.session_state.active_filters = filter_config
+        # Update session state
+        st.session_state.dur_filter_min = dur_range[0]
+        st.session_state.dur_filter_max = dur_range[1]
         
         # Save filter section
         st.write("---")
@@ -218,7 +294,7 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
             if not filter_name or not filter_description:
                 st.error("Please provide both a name and description for the filter")
             else:
-                success = filter_manager.save_predefined_filter(filter_name, filter_description, filter_config)
+                success = filter_manager.save_predefined_filter(filter_name, filter_description, st.session_state.active_filters)
                 if success:
                     st.success(f"Filter '{filter_name}' saved successfully!")
                 else:
@@ -228,13 +304,13 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
                 # st.rerun()
         
         # Apply filters
-        filtered_universe = filter_manager.apply_filter(universe, filter_config)
+        filtered_universe = filter_manager.apply_filter(universe, st.session_state.active_filters)
         
         # Show filter stats
         st.info(f"Filtered universe: {len(filtered_universe)} bonds (from {len(universe)} total)")
         
         # Save last used filters
-        filter_manager.save_last_used(filter_config)
+        filter_manager.save_last_used(st.session_state.active_filters)
         
         return filtered_universe
     
