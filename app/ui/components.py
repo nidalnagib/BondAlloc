@@ -29,7 +29,7 @@ def render_constraints_form() -> Optional[PortfolioConstraints]:
             min_securities = st.number_input(
                 "Minimum Securities",
                 min_value=1,
-                max_value=50,
+                max_value=100,
                 value=5,
                 step=1
             )
@@ -37,7 +37,7 @@ def render_constraints_form() -> Optional[PortfolioConstraints]:
             max_securities = st.number_input(
                 "Maximum Securities",
                 min_value=min_securities,
-                max_value=50,
+                max_value=100,
                 value=max(15, min_securities),
                 step=1
             )
@@ -266,11 +266,13 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             'ytm': bond.ytm,
             'duration': bond.modified_duration,
             'grade': bond.rating_grade.value,
+            'payment_rank': bond.payment_rank,
             'target_notional': notional,
             'rounded_notional': rounded_notional,
             'min_piece': min_notional,
             'increment': increment,
-            'warning': warning
+            'warning': warning,
+            'sector': bond.sector
         })
     df_portfolio = pd.DataFrame(portfolio_data)
     
@@ -286,8 +288,25 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             title='Country Breakdown'
         )
         st.plotly_chart(fig, use_container_width=True)
+
+        # Sector breakdown bar chart
+        sector_weights = df_portfolio.groupby('sector')['weight'].sum().sort_values(ascending=True)
+        fig = go.Figure(data=[go.Bar(
+            x=sector_weights.values * 100,  # Convert to percentage
+            y=sector_weights.index,
+            orientation='h'
+        )])
+        fig.update_layout(
+            title='Sector Breakdown',
+            xaxis_title='Weight (%)',
+            yaxis_title='Sector',
+            showlegend=False,
+            height=400,
+            yaxis={'categoryorder':'total ascending'}
+        )
+        st.plotly_chart(fig, use_container_width=True)
     
-    # Rating breakdown
+    # Rating breakdown and Payment Rank
     with col2:
         # Create two bar charts
         fig = go.Figure()
@@ -322,6 +341,15 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
                 'direction': 'down',
                 'showactive': True,
             }]
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Payment Rank breakdown
+        rank_weights = df_portfolio.groupby('payment_rank')['weight'].sum()
+        fig = px.pie(
+            values=rank_weights.values * 100,  # Convert to percentage
+            names=rank_weights.index,
+            title='Payment Rank Breakdown'
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -393,7 +421,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
         # Top 10 bonds
         st.subheader("Top 10 Bonds")
         top_bonds = df_portfolio.nlargest(10, 'weight')[
-            ['isin', 'issuer', 'coupon', 'maturity', 'ytm', 'weight']
+            ['isin', 'issuer', 'coupon', 'maturity', 'ytm', 'weight', 'payment_rank']
         ].copy()
         top_bonds['coupon'] = top_bonds['coupon'].map('{:.2%}'.format)
         top_bonds['ytm'] = top_bonds['ytm'].map('{:.2%}'.format)
@@ -410,10 +438,10 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
     df_display['rounded_weight'] = df_display['rounded_weight'].map('{:.2%}'.format)
     df_display['coupon'] = df_display['coupon'].map('{:.2%}'.format)
     df_display['maturity'] = df_display['maturity'].dt.strftime('%Y-%m-%d')
-    df_display['target_notional'] = df_display['target_notional'].map('{:,.0f}'.format)
-    df_display['rounded_notional'] = df_display['rounded_notional'].map('{:,.0f}'.format)
-    df_display['min_piece'] = df_display['min_piece'].map('{:,.0f}'.format)
-    df_display['increment'] = df_display['increment'].map('{:,.0f}'.format)
+    df_display['target_notional'] = df_display['target_notional'].map('{:,.2f}'.format)
+    df_display['rounded_notional'] = df_display['rounded_notional'].map('{:,.2f}'.format)
+    df_display['min_piece'] = df_display['min_piece'].map('{:,.2f}'.format)
+    df_display['increment'] = df_display['increment'].map('{:,.2f}'.format)
     
     st.dataframe(
         df_display,
@@ -421,6 +449,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             'isin': 'ISIN',
             'issuer': 'Issuer',
             'rating': 'Rating',
+            'payment_rank': 'Payment Rank',
             'ytm': 'YTM',
             'duration': 'Duration',
             'weight': 'Target Weight',
@@ -433,7 +462,8 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             'coupon': 'Coupon',
             'maturity': 'Maturity',
             'grade': 'Grade',
-            'warning': 'Warning'
+            'warning': 'Warning',
+            'sector': 'Sector'
         },
         hide_index=True
     )

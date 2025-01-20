@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 from datetime import datetime
 from pathlib import Path
 import logging
@@ -76,6 +77,8 @@ def load_bond_universe(uploaded_file: UploadedFile) -> list[Bond]:
                     setattr(bond, 'country', str(row['Country']))
                 if 'Sector' in df.columns:
                     setattr(bond, 'sector', str(row['Sector']))
+                if 'PaymentRank' in df.columns:
+                    setattr(bond, 'payment_rank', str(row['PaymentRank']))
                     
                 bonds.append(bond)
             except Exception as e:
@@ -135,8 +138,9 @@ def main():
                     'Issuer': bond.issuer,
                     'Country': getattr(bond, 'country', 'Unknown'),
                     'Sector': getattr(bond, 'sector', 'Unknown'),
-                    'Min Piece': f"{bond.min_piece:,.0f}",
-                    'Increment': f"{bond.increment_size:,.0f}"
+                    'Payment Rank': getattr(bond, 'payment_rank', 'Unknown'),
+                    'Min Piece': f"{bond.min_piece:,.2f}",
+                    'Increment': f"{bond.increment_size:,.2f}"
                 } for bond in universe])
                 
                 # Add summary statistics
@@ -149,15 +153,49 @@ def main():
                     fig.update_layout(
                         xaxis_title="Rating",
                         yaxis_title="Count",
-                        showlegend=False
+                        showlegend=False,
+                        height=400
                     )
                     st.plotly_chart(fig, use_container_width=True)
-                
-                with col2:
+                    
                     # Sector distribution
                     sector_dist = df['Sector'].value_counts()
                     st.subheader("Sector Distribution")
-                    fig = go.Figure(data=[go.Pie(labels=sector_dist.index, values=sector_dist.values)])
+                    fig = go.Figure(data=[go.Bar(
+                        x=sector_dist.values,
+                        y=sector_dist.index,
+                        orientation='h'
+                    )])
+                    fig.update_layout(
+                        xaxis_title="Count",
+                        yaxis_title="Sector",
+                        showlegend=False,
+                        height=400,
+                        yaxis={'categoryorder':'total ascending'}
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                with col2:
+                    # Payment Rank distribution
+                    rank_dist = df['Payment Rank'].value_counts()
+                    st.subheader("Payment Rank Distribution")
+                    fig = px.pie(
+                        values=rank_dist.values,
+                        names=rank_dist.index,
+                        title='Payment Rank Breakdown'
+                    )
+                    fig.update_layout(height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Country distribution
+                    country_dist = df['Country'].value_counts()
+                    st.subheader("Country Distribution")
+                    fig = px.pie(
+                        values=country_dist.values,
+                        names=country_dist.index,
+                        title='Country Breakdown'
+                    )
+                    fig.update_layout(height=400)
                     st.plotly_chart(fig, use_container_width=True)
                 
                 # Sort by YTM descending and display table
@@ -203,8 +241,8 @@ def main():
                 portfolio_df['Notional'] = portfolio_df['Notional'].apply(lambda x: f"{x:,.0f}")
                 portfolio_df['YTM'] = portfolio_df['YTM'].apply(lambda x: f"{x:.2%}")
                 portfolio_df['Duration'] = portfolio_df['Duration'].apply(lambda x: f"{x:.2f}")
-                portfolio_df['Min Piece'] = portfolio_df['Min Piece'].apply(lambda x: f"{x:,.0f}")
-                portfolio_df['Increment'] = portfolio_df['Increment'].apply(lambda x: f"{x:,.0f}")
+                portfolio_df['Min Piece'] = portfolio_df['Min Piece'].apply(lambda x: f"{x:,.2f}")
+                portfolio_df['Increment'] = portfolio_df['Increment'].apply(lambda x: f"{x:,.2f}")
                 
                 # Convert to CSV
                 csv = portfolio_df.to_csv(index=False)

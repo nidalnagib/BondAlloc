@@ -74,13 +74,14 @@ class Bond(BaseModel):
     coupon_rate: float
     coupon_frequency: int
     credit_rating: CreditRating
-    min_piece: int
-    increment_size: int
+    min_piece: float
+    increment_size: float
     currency: str
     day_count_convention: str
     issuer: str
     country: Optional[str] = None
     sector: Optional[str] = None
+    payment_rank: Optional[str] = None
 
     @property
     def rating_grade(self) -> RatingGrade:
