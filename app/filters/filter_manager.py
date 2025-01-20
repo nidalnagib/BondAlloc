@@ -89,3 +89,48 @@ class FilterManager:
                 return json.load(f)
         except:
             return None
+    
+    def save_predefined_filter(self, name: str, description: str, filter_config: Dict[str, Any]) -> bool:
+        """Save a new predefined filter"""
+        if not name or not description:
+            return False
+            
+        # Format the filter entry
+        filter_entry = {
+            "description": description,
+            "filters": filter_config
+        }
+        
+        # Load existing filters
+        try:
+            with open(self.filters_file, 'r') as f:
+                filters = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            filters = {}
+            
+        # Add new filter
+        filters[name] = filter_entry
+        
+        # Save back to file
+        try:
+            with open(self.filters_file, 'w') as f:
+                json.dump(filters, f, indent=4)
+            return True
+        except Exception:
+            return False
+    
+    def delete_predefined_filter(self, filter_name: str) -> bool:
+        """Delete a predefined filter"""
+        try:
+            with open(self.filters_file, 'r') as f:
+                filters = json.load(f)
+                
+            if filter_name in filters:
+                del filters[filter_name]
+                
+                with open(self.filters_file, 'w') as f:
+                    json.dump(filters, f, indent=4)
+                return True
+            return False
+        except Exception:
+            return False

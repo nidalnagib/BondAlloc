@@ -16,16 +16,55 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
         st.session_state.active_filters = {}
     if 'selected_predefined_filter' not in st.session_state:
         st.session_state.selected_predefined_filter = "None"
+    if 'show_delete_confirmation' not in st.session_state:
+        st.session_state.show_delete_confirmation = False
+    if 'filter_to_delete' not in st.session_state:
+        st.session_state.filter_to_delete = None
     
     # Predefined filters
     predefined_filters = filter_manager.get_predefined_filters()
     if predefined_filters:
         st.write("Predefined Filters")
-        selected_filter = st.selectbox(
-            "Select a predefined filter",
-            options=["None"] + list(predefined_filters.keys()),
-            format_func=lambda x: "None" if x == "None" else f"{x} - {predefined_filters[x]}"
-        )
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            selected_filter = st.selectbox(
+                "Select a predefined filter",
+                options=["None"] + list(predefined_filters.keys()),
+                format_func=lambda x: "None" if x == "None" else f"{x} - {predefined_filters[x]}"
+            )
+        
+        with col2:
+            if selected_filter != "None":
+                # Add empty space to push button to bottom
+                st.write("")
+                st.write("")
+                if st.button("🗑️ Delete Filter"):
+                    st.session_state.show_delete_confirmation = True
+                    st.session_state.filter_to_delete = selected_filter
+        
+        # Delete confirmation popup
+        if st.session_state.show_delete_confirmation:
+            confirm_col1, confirm_col2 = st.columns([1, 1])
+            st.warning(f"Are you sure you want to delete the filter '{st.session_state.filter_to_delete}'?")
+            
+            with confirm_col1:
+                if st.button("Yes, Delete"):
+                    success = filter_manager.delete_predefined_filter(st.session_state.filter_to_delete)
+                    if success:
+                        st.success(f"Filter '{st.session_state.filter_to_delete}' deleted successfully!")
+                        st.session_state.selected_predefined_filter = "None"
+                    else:
+                        st.error("Failed to delete filter. Please try again.")
+                    st.session_state.show_delete_confirmation = False
+                    st.session_state.filter_to_delete = None
+                    st.rerun()
+            
+            with confirm_col2:
+                if st.button("No, Cancel"):
+                    st.session_state.show_delete_confirmation = False
+                    st.session_state.filter_to_delete = None
+                    st.rerun()
         
         # Update session state and get filter details if changed
         if selected_filter != st.session_state.selected_predefined_filter:
@@ -141,6 +180,33 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
         
         # Store current filter configuration
         st.session_state.active_filters = filter_config
+        
+        # Save filter section
+        st.write("---")
+        st.write("Save Current Filter")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            filter_name = st.text_input("Filter Name", 
+                                      key="save_filter_name", 
+                                      placeholder="e.g., High Grade Tech")
+        with col2:
+            filter_description = st.text_input("Filter Description", 
+                                             key="save_filter_desc", 
+                                             placeholder="e.g., High grade technology sector bonds")
+        
+        if st.button("Save as Predefined Filter"):
+            if not filter_name or not filter_description:
+                st.error("Please provide both a name and description for the filter")
+            else:
+                success = filter_manager.save_predefined_filter(filter_name, filter_description, filter_config)
+                if success:
+                    st.success(f"Filter '{filter_name}' saved successfully!")
+                else:
+                    st.error("Failed to save filter. Please try again.")
+                
+                # Refresh to update the predefined filters list
+                # st.rerun()
         
         # Apply filters
         filtered_universe = filter_manager.apply_filter(universe, filter_config)

@@ -5,7 +5,17 @@
         "filters": {
             "rating": {
                 "type": "categorical",
-                "values": ["BB+", "BB", "BB-", "B+", "B", "B-", "CCC+", "CCC", "CCC-"]
+                "values": [
+                    "BB+",
+                    "BB",
+                    "BB-",
+                    "B+",
+                    "B",
+                    "B-",
+                    "CCC+",
+                    "CCC",
+                    "CCC-"
+                ]
             }
         }
     },
@@ -15,7 +25,18 @@
         "filters": {
             "rating": {
                 "type": "categorical",
-                "values": ["AAA", "AA+", "AA", "AA-", "A+", "A", "A-", "BBB+", "BBB", "BBB-"]
+                "values": [
+                    "AAA",
+                    "AA+",
+                    "AA",
+                    "AA-",
+                    "A+",
+                    "A",
+                    "A-",
+                    "BBB+",
+                    "BBB",
+                    "BBB-"
+                ]
             }
         }
     },

@@ -132,11 +132,7 @@ def main():
         if universe:
             st.session_state.universe = universe
             st.success(f"Loaded {len(universe)} bonds")
-            
-            # Apply filters
-            filtered_universe = render_filter_controls(universe, filter_manager)
-            st.session_state.filtered_universe = filtered_universe
-            
+
             # Display universe summary with additional columns in expander
             with st.expander("View Bond Universe", expanded=False):
                 df = pd.DataFrame([{
@@ -213,6 +209,11 @@ def main():
                 df = df.sort_values('YTM', ascending=False)
                 st.dataframe(df, hide_index=True)
     
+
+            # Apply filters
+            filtered_universe = render_filter_controls(universe, filter_manager)
+            st.session_state.filtered_universe = filtered_universe
+            
     # Get constraints and check if optimization should run
     constraints, run_optimization = render_constraints_form()
     if constraints:
