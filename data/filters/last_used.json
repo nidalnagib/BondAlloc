@@ -1,73 +1,10 @@
 {
   "rating": {
-    "type": "categorical",
+    "type": "categorical_exclude",
     "values": [
-      "BB+",
-      "BB",
-      "BB-",
-      "B+",
-      "B",
-      "B-",
-      "CCC+",
-      "CCC",
-      "CCC-"
-    ]
-  },
-  "country": {
-    "type": "categorical",
-    "values": [
-      "Argentina",
-      "Belgium",
-      "Brazil",
-      "DR Congo",
-      "Ecuador",
-      "France",
-      "Germany",
-      "Indonesia",
-      "Italy",
-      "Japan",
-      "Lebanon",
-      "Mexico",
-      "Netherlands",
-      "Pakistan",
-      "Philippines",
-      "South Africa",
-      "Spain",
-      "Sri Lanka",
-      "Sweden",
-      "Switzerland",
-      "Turkey",
-      "United Kingdom",
-      "United States",
-      "Venezuela",
-      "Vietnam"
-    ]
-  },
-  "sector": {
-    "type": "categorical",
-    "values": [
-      "Airlines",
-      "Automotive",
-      "Banking",
-      "Consumer Staples",
-      "Energy",
-      "Government",
-      "Healthcare",
-      "Materials",
-      "Mining",
-      "Real Estate",
-      "Technology",
-      "Telecommunications",
-      "Utilities"
-    ]
-  },
-  "payment_rank": {
-    "type": "categorical",
-    "values": [
-      "Junior Subordinated",
-      "Senior Secured",
-      "Senior Unsecured",
-      "Subordinated"
+      "A+",
+      "AA",
+      "AAA"
     ]
   },
   "ytm": {

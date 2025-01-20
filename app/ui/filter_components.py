@@ -24,7 +24,7 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
     # Predefined filters
     predefined_filters = filter_manager.get_predefined_filters()
     if predefined_filters:
-        st.write("Predefined Filters")
+        # st.write("Predefined Filters")
         col1, col2 = st.columns([3, 1])
         
         with col1:
@@ -83,35 +83,47 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
         with col1:
             # Rating filter
             ratings = sorted(list(set(bond.credit_rating.display() for bond in universe)))
-            selected_ratings = st.multiselect(
-                "Ratings",
+            st.write("Ratings Filter")
+            # st.caption("Select ratings to exclude from universe")
+            excluded_ratings = st.multiselect(
+                "Exclude Ratings",
                 options=ratings,
-                default=current_filters.get('rating', {}).get('values', ratings) if current_filters else ratings
+                default=current_filters.get('rating', {}).get('values', []) if current_filters and current_filters.get('rating', {}).get('type') == 'categorical_exclude' else [],
+                key="rating_filter"
             )
             
             # Country filter
             countries = sorted(list(set(getattr(bond, 'country', 'Unknown') for bond in universe)))
-            selected_countries = st.multiselect(
-                "Countries",
+            st.write("Countries Filter")
+            #st.caption("Select countries to exclude from universe")
+            excluded_countries = st.multiselect(
+                "Exclude Countries",
                 options=countries,
-                default=current_filters.get('country', {}).get('values', countries) if current_filters else countries
+                default=current_filters.get('country', {}).get('values', []) if current_filters and current_filters.get('country', {}).get('type') == 'categorical_exclude' else [],
+                key="country_filter"
             )
         
         with col2:
             # Sector filter
             sectors = sorted(list(set(getattr(bond, 'sector', 'Unknown') for bond in universe)))
-            selected_sectors = st.multiselect(
-                "Sectors",
+            st.write("Sectors Filter")
+            #st.caption("Select sectors to exclude from universe")
+            excluded_sectors = st.multiselect(
+                "Exclude Sectors",
                 options=sectors,
-                default=current_filters.get('sector', {}).get('values', sectors) if current_filters else sectors
+                default=current_filters.get('sector', {}).get('values', []) if current_filters and current_filters.get('sector', {}).get('type') == 'categorical_exclude' else [],
+                key="sector_filter"
             )
             
             # Payment Rank filter
             ranks = sorted(list(set(getattr(bond, 'payment_rank', 'Unknown') for bond in universe)))
-            selected_ranks = st.multiselect(
-                "Payment Ranks",
+            st.write("Payment Ranks Filter")
+            #st.caption("Select payment ranks to exclude from universe")
+            excluded_ranks = st.multiselect(
+                "Exclude Payment Ranks",
                 options=ranks,
-                default=current_filters.get('payment_rank', {}).get('values', ranks) if current_filters else ranks
+                default=current_filters.get('payment_rank', {}).get('values', []) if current_filters and current_filters.get('payment_rank', {}).get('type') == 'categorical_exclude' else [],
+                key="rank_filter"
             )
         
         # YTM range
@@ -149,33 +161,40 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
         )
         
         # Build filter configuration
-        filter_config = {
-            'rating': {
-                'type': 'categorical',
-                'values': selected_ratings
-            },
-            'country': {
-                'type': 'categorical',
-                'values': selected_countries
-            },
-            'sector': {
-                'type': 'categorical',
-                'values': selected_sectors
-            },
-            'payment_rank': {
-                'type': 'categorical',
-                'values': selected_ranks
-            },
-            'ytm': {
-                'type': 'range',
-                'min': ytm_filter_min,
-                'max': ytm_filter_max
-            },
-            'modified_duration': {
-                'type': 'range',
-                'min': dur_range[0],
-                'max': dur_range[1]
+        filter_config = {}
+        
+        # Add categorical exclude filters only if values are selected
+        if excluded_ratings:
+            filter_config['rating'] = {
+                'type': 'categorical_exclude',
+                'values': excluded_ratings
             }
+        if excluded_countries:
+            filter_config['country'] = {
+                'type': 'categorical_exclude',
+                'values': excluded_countries
+            }
+        if excluded_sectors:
+            filter_config['sector'] = {
+                'type': 'categorical_exclude',
+                'values': excluded_sectors
+            }
+        if excluded_ranks:
+            filter_config['payment_rank'] = {
+                'type': 'categorical_exclude',
+                'values': excluded_ranks
+            }
+            
+        # Add range filters
+        filter_config['ytm'] = {
+            'type': 'range',
+            'min': ytm_filter_min,
+            'max': ytm_filter_max
+        }
+        filter_config['modified_duration'] = {
+            'type': 'range',
+            'min': dur_range[0],
+            'max': dur_range[1]
         }
         
         # Store current filter configuration

@@ -1,30 +1,10 @@
 {
     "high_yield": {
         "name": "High Yield Universe",
-        "description": "Bonds rated BB+ and below",
+        "description": "Exclude investment grade bonds",
         "filters": {
             "rating": {
-                "type": "categorical",
-                "values": [
-                    "BB+",
-                    "BB",
-                    "BB-",
-                    "B+",
-                    "B",
-                    "B-",
-                    "CCC+",
-                    "CCC",
-                    "CCC-"
-                ]
-            }
-        }
-    },
-    "investment_grade": {
-        "name": "Investment Grade Universe",
-        "description": "Bonds rated BBB- and above",
-        "filters": {
-            "rating": {
-                "type": "categorical",
+                "type": "categorical_exclude",
                 "values": [
                     "AAA",
                     "AA+",
@@ -36,6 +16,29 @@
                     "BBB+",
                     "BBB",
                     "BBB-"
+                ]
+            }
+        }
+    },
+    "investment_grade": {
+        "name": "Investment Grade Universe",
+        "description": "Exclude high yield bonds",
+        "filters": {
+            "rating": {
+                "type": "categorical_exclude",
+                "values": [
+                    "BB+",
+                    "BB",
+                    "BB-",
+                    "B+",
+                    "B",
+                    "B-",
+                    "CCC+",
+                    "CCC",
+                    "CCC-",
+                    "CC",
+                    "C",
+                    "D"
                 ]
             }
         }
@@ -58,6 +61,19 @@
                 "type": "range",
                 "min": 3.0,
                 "max": 7.0
+            }
+        }
+    },
+    "exclude_subordinated": {
+        "name": "Senior Only",
+        "description": "Exclude all subordinated bonds",
+        "filters": {
+            "payment_rank": {
+                "type": "categorical_exclude",
+                "values": [
+                    "Subordinated",
+                    "Junior Subordinated"
+                ]
             }
         }
     }

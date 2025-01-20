@@ -46,6 +46,14 @@ class FilterManager:
             if filter_spec['type'] == 'categorical':
                 if field in df.columns and 'values' in filter_spec:
                     mask &= df[field].isin(filter_spec['values'])
+            elif filter_spec['type'] == 'categorical_exclude':
+                if field in df.columns and 'values' in filter_spec:
+                    # Get all unique values for this field
+                    all_values = set(df[field].unique())
+                    # Remove the excluded values
+                    allowed_values = all_values - set(filter_spec['values'])
+                    # Keep only rows with allowed values
+                    mask &= df[field].isin(allowed_values)
             elif filter_spec['type'] == 'range':
                 # Handle both 'duration' and 'modified_duration' fields
                 target_field = field
