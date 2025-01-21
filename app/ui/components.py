@@ -136,27 +136,45 @@ def render_constraints_form() -> Tuple[Optional[PortfolioConstraints], bool]:
         st.info("Set minimum and maximum exposure to High Yield bonds")
         
         grade_constraints = {}
+        
+        # Initialize session state for HY values if not exists
+        if 'min_hy' not in st.session_state:
+            st.session_state.min_hy = 0.0
+        if 'max_hy' not in st.session_state:
+            st.session_state.max_hy = 40.0
+            
         col1, col2 = st.columns(2)
         with col1:
             min_hy = st.number_input(
                 "Min High Yield (%)",
                 min_value=0.0,
                 max_value=100.0,
-                value=0.0,
+                value=st.session_state.min_hy,
                 step=1.0,
                 format="%.1f",
                 key="min_high_yield"
             ) / 100.0
+            st.session_state.min_hy = min_hy * 100
+            
         with col2:
+            # Ensure max_hy is at least equal to min_hy
+            current_max = max(st.session_state.max_hy, st.session_state.min_hy)
             max_hy = st.number_input(
                 "Max High Yield (%)",
-                min_value=float(min_hy * 100),
+                min_value=0.0,  # Remove dependency on min_hy
                 max_value=100.0,
-                value=40.0,
+                value=current_max,
                 step=1.0,
                 format="%.1f",
                 key="max_high_yield"
             ) / 100.0
+            st.session_state.max_hy = max_hy * 100
+            
+        # Validate and adjust if needed
+        if max_hy < min_hy:
+            st.warning("Maximum High Yield exposure cannot be less than minimum. Adjusting maximum to match minimum.")
+            max_hy = min_hy
+            st.session_state.max_hy = min_hy * 100
         
         if min_hy > 0 or max_hy < 1:
             grade_constraints[RatingGrade.HIGH_YIELD] = (min_hy, max_hy)
@@ -236,11 +254,10 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
     
     # Create portfolio dataframe
     portfolio_data = []
-    total_size = result.metrics.get('total_size', 10_000_000)  # Default to 10M if not provided
     
     for isin, weight in result.portfolio.items():
         bond = next(b for b in universe if b.isin == isin)
-        notional = weight * total_size
+        notional = weight * total_size  # Use passed total_size parameter
         min_notional = bond.min_piece
         increment = bond.increment_size
         
