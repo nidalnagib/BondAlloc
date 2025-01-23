@@ -60,13 +60,41 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
                 'max': max(bond.modified_duration for bond in universe)
             }
     
+    # Initialize session state
     if 'selected_predefined_filter' not in st.session_state:
         st.session_state.selected_predefined_filter = "None"
+    if 'show_success_message' not in st.session_state:
+        st.session_state.show_success_message = None
     
     # Predefined filters section
     st.write("Predefined Filters")
     predefined = filter_manager.get_predefined_filters()
     predefined_options = {"None": "No filter"} | predefined
+    
+    # Handle save/delete operations before creating the selectbox
+    if 'save_filter_clicked' in st.session_state and st.session_state.save_filter_clicked:
+        filter_name = st.session_state.get('filter_name', '')
+        filter_desc = st.session_state.get('filter_desc', '')
+        if filter_manager.save_filter(filter_name, filter_desc, st.session_state.active_filters):
+            st.session_state.show_success_message = f"Filter '{filter_name}' saved successfully"
+            st.session_state.selected_predefined_filter = filter_name
+        st.session_state.save_filter_clicked = False
+        st.rerun()
+    
+    if 'delete_filter_clicked' in st.session_state and st.session_state.delete_filter_clicked:
+        filter_to_delete = st.session_state.selected_predefined_filter
+        if filter_manager.delete_filter(filter_to_delete):
+            st.session_state.show_success_message = f"Filter '{filter_to_delete}' deleted"
+            st.session_state.selected_predefined_filter = "None"
+        st.session_state.delete_filter_clicked = False
+        st.rerun()
+    
+    # Show success message if exists
+    if st.session_state.show_success_message:
+        st.success(st.session_state.show_success_message)
+        st.session_state.show_success_message = None
+    
+    # Create the filter selection dropdown
     selected_filter = st.selectbox(
         "Select Filter",
         options=list(predefined_options.keys()),
@@ -100,6 +128,33 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
     
     # Custom filters section
     with st.expander("Custom Filters", expanded=True):
+        # Save/Delete filter controls
+        if selected_filter != "None":
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🗑️ Delete Filter"):
+                    st.session_state.delete_filter_clicked = True
+                    st.rerun()
+        else:
+            # Save filter form
+            st.write("Save Current Filter")
+            col1, col2 = st.columns(2)
+            with col1:
+                filter_name = st.text_input("Filter Name", placeholder="e.g., High Grade Tech", key="filter_name")
+            with col2:
+                filter_desc = st.text_input("Description", placeholder="e.g., High grade technology sector bonds", key="filter_desc")
+            
+            if st.button("💾 Save Filter"):
+                if not filter_name or not filter_desc:
+                    st.error("Please provide both name and description")
+                elif filter_name in filter_manager.get_predefined_filters():
+                    st.error(f"Filter name '{filter_name}' already exists")
+                else:
+                    st.session_state.save_filter_clicked = True
+                    st.rerun()
+        
+        st.markdown("---")
+        
         col1, col2 = st.columns(2)
         
         with col1:

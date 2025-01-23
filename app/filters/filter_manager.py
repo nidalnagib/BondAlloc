@@ -142,3 +142,35 @@ class FilterManager:
             return False
         except Exception:
             return False
+
+    def save_filter(self, name: str, description: str, filters: Dict[str, Any]) -> bool:
+        """Save a new filter or update existing one"""
+        try:
+            self._predefined_filters[name] = {
+                "description": description,
+                "filters": filters
+            }
+            self.save_predefined_filters()
+            return True
+        except Exception as e:
+            print(f"Error saving filter: {e}")
+            return False
+
+    def delete_filter(self, name: str) -> bool:
+        """Delete a filter by name"""
+        try:
+            if name in self._predefined_filters:
+                del self._predefined_filters[name]
+                self.save_predefined_filters()
+                return True
+            return False
+        except Exception as e:
+            print(f"Error deleting filter: {e}")
+            return False
+
+    def save_predefined_filters(self):
+        """Save predefined filters to JSON file"""
+        # Ensure directory exists
+        self.filters_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.filters_file, "w") as f:
+            json.dump(self._predefined_filters, f, indent=4)
