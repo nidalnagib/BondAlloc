@@ -5,10 +5,19 @@ from app.data.models import Bond
 from app.filters import FilterManager
 import uuid
 
+def delete_condition(group_id: str, condition_index: int):
+    """Callback to delete a condition from a group"""
+    for group in st.session_state.active_filters['exclusion_groups']:
+        if group['id'] == group_id:
+            group['conditions'].pop(condition_index)
+            break
 
-# TODO :
-#  FIX : When loading filter, category field and value stay sector / airline / defaulted
-#  IMPROVE : save filter & delete filter functionnality
+def delete_group(group_id: str):
+    """Callback to delete a group"""
+    st.session_state.active_filters['exclusion_groups'] = [
+        group for group in st.session_state.active_filters['exclusion_groups'] 
+        if group['id'] != group_id
+    ]
 
 def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) -> Optional[List[Bond]]:
     """Render filter controls and return filtered universe"""
@@ -68,6 +77,12 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
     # Update session state and get filter details if changed
     if selected_filter != "None":
         filter_config = filter_manager._predefined_filters[selected_filter]['filters']
+        
+        # Clear all filter-related widget states
+        for key in list(st.session_state.keys()):
+            if any(key.startswith(prefix) for prefix in ['cat_', 'val_', 'add_cond_', 'del_cond_', 'del_group_']):
+                del st.session_state[key]
+        
         # Add IDs to groups and conditions if they don't exist
         for group in filter_config['exclusion_groups']:
             if 'id' not in group:
@@ -75,13 +90,18 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
             for condition in group['conditions']:
                 if 'id' not in condition:
                     condition['id'] = str(uuid.uuid4())
+                # Ensure category and value are set
+                if 'category' not in condition:
+                    condition['category'] = 'sector'
+                if 'value' not in condition:
+                    condition['value'] = None
+        
         st.session_state.active_filters = filter_config
     
     # Custom filters section
     with st.expander("Custom Filters", expanded=True):
         col1, col2 = st.columns(2)
         
-        # Range filters in first column
         with col1:
             st.write("Range Filters")
             
@@ -125,7 +145,6 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
                 'modified_duration': {'min': dur_range[0], 'max': dur_range[1]}
             }
         
-        # Exclusion groups in second column
         with col2:
             st.write("Exclusion Rules")
             
@@ -137,65 +156,80 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
                 })
             
             # Render each exclusion group
-            groups_to_remove = []
             for i, group in enumerate(st.session_state.active_filters['exclusion_groups']):
                 with st.container():
                     st.write(f"Group {i + 1}")
                     
                     # Add condition button
                     if st.button(f"+ Add Condition", key=f"add_cond_{group['id']}"):
+                        # Get category from first condition in group if it exists
+                        default_category = 'sector'
+                        if group['conditions']:
+                            default_category = group['conditions'][0].get('category', 'sector')
+                        
                         group['conditions'].append({
                             'id': str(uuid.uuid4()),
-                            'category': 'sector',
+                            'category': default_category,
                             'value': None
                         })
                     
                     # Render conditions
-                    conditions_to_remove = []
                     for j, condition in enumerate(group['conditions']):
                         col1, col2, col3 = st.columns([2, 2, 1])
                         
                         with col1:
-                            category = st.selectbox(
+                            current_category = condition.get('category', 'sector')
+                            new_category = st.selectbox(
                                 "Category",
                                 options=['sector', 'payment_rank', 'rating', 'issuer', 'country'],
-                                key=f"cat_{condition['id']}"
+                                key=f"cat_{condition['id']}",
+                                index=(['sector', 'payment_rank', 'rating', 'issuer', 'country'].index(current_category))
                             )
-                            condition['category'] = category
+                            if new_category != current_category:
+                                condition['category'] = new_category
+                                condition['value'] = None  # Reset value when category changes
                         
                         with col2:
                             # Get available values for the selected category
-                            if category == 'rating':
+                            if new_category == 'rating':
                                 values = sorted(list(set(bond.credit_rating.display() for bond in universe)))
                             else:
-                                values = sorted(list(set(getattr(bond, category, 'Unknown') for bond in universe)))
+                                values = sorted(list(set(getattr(bond, new_category, 'Unknown') for bond in universe)))
                             
-                            value = st.selectbox(
+                            current_value = condition.get('value')
+                            try:
+                                value_index = values.index(current_value) if current_value in values else 0
+                            except ValueError:
+                                value_index = 0
+                                
+                            new_value = st.selectbox(
                                 "Value",
                                 options=values,
-                                key=f"val_{condition['id']}"
+                                key=f"val_{condition['id']}",
+                                index=value_index
                             )
-                            condition['value'] = value
+                            if new_value != current_value:
+                                condition['value'] = new_value
                         
                         with col3:
                             st.write("")
                             st.write("")
-                            if st.button("🗑️", key=f"del_cond_{condition['id']}"):
-                                conditions_to_remove.append(j)
-                    
-                    # Remove marked conditions
-                    for j in reversed(conditions_to_remove):
-                        group['conditions'].pop(j)
+                            st.button(
+                                "🗑️", 
+                                key=f"del_cond_{condition['id']}", 
+                                on_click=delete_condition,
+                                args=(group['id'], j)
+                            )
                     
                     # Group delete button
-                    if st.button("Delete Group", key=f"del_group_{group['id']}"):
-                        groups_to_remove.append(i)
+                    st.button(
+                        "Delete Group", 
+                        key=f"del_group_{group['id']}", 
+                        on_click=delete_group,
+                        args=(group['id'],)
+                    )
                     
                     st.markdown("---")
-            
-            # Remove marked groups
-            for i in reversed(groups_to_remove):
-                st.session_state.active_filters['exclusion_groups'].pop(i)
     
     # Apply filters
     filtered_universe = filter_manager.apply_filter(universe, st.session_state.active_filters)

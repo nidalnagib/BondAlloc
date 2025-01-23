@@ -61,7 +61,7 @@
                     "conditions": [
                         {
                             "category": "sector",
-                            "value": "Banks"
+                            "value": "Banking"
                         },
                         {
                             "category": "payment_rank",
@@ -91,7 +91,7 @@
                     "conditions": [
                         {
                             "category": "sector",
-                            "value": "Banks"
+                            "value": "Banking"
                         },
                         {
                             "category": "payment_rank",
