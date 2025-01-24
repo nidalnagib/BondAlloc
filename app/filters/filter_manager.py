@@ -26,22 +26,30 @@ class FilterManager:
     
     def apply_filter(self, universe: List[Bond], filter_config: Dict[str, Any]) -> List[Bond]:
         """Apply filter configuration to universe"""
-        # Convert bonds to DataFrame for easier filtering
-        df = pd.DataFrame([{
-            'isin': bond.isin,
-            'clean_price': bond.clean_price,
-            'ytm': bond.ytm,
-            'modified_duration': bond.modified_duration,
-            'maturity_date': bond.maturity_date,
-            'rating': bond.credit_rating.display(),
-            'issuer': bond.issuer,
-            'country': getattr(bond, 'country', 'Unknown'),
-            'sector': getattr(bond, 'sector', 'Unknown'),
-            'payment_rank': getattr(bond, 'payment_rank', 'Unknown')
-        } for bond in universe])
+        if not filter_config:
+            return universe
+
+        df = pd.DataFrame([bond.__dict__ for bond in universe])
         
-        # Start with all bonds included
-        mask = pd.Series([True] * len(df))
+        # Apply range filters
+        range_filters = filter_config.get('range_filters', {})
+        for field, range_values in range_filters.items():
+            if field == 'maturity_year':
+                # Special handling for maturity year to include full years
+                min_val = range_values.get('min')
+                max_val = range_values.get('max')
+                if min_val is not None:
+                    df = df[df['maturity_date'].dt.year >= min_val]
+                if max_val is not None:
+                    # Include bonds maturing up to the end of the max year
+                    df = df[df['maturity_date'].dt.year <= max_val]
+            elif field in df.columns:
+                min_val = range_values.get('min')
+                max_val = range_values.get('max')
+                if min_val is not None:
+                    df = df[df[field] >= min_val]
+                if max_val is not None:
+                    df = df[df[field] <= max_val]
         
         # Apply exclusion groups if present
         if 'exclusion_groups' in filter_config:
@@ -60,19 +68,10 @@ class FilterManager:
             # Combine all group masks with OR logic and invert (we want to exclude matches)
             if group_masks:
                 exclude_mask = pd.concat(group_masks, axis=1).any(axis=1)
-                mask &= ~exclude_mask
-        
-        # Apply range filters if present
-        if 'range_filters' in filter_config:
-            for field, range_spec in filter_config['range_filters'].items():
-                if field in df.columns:
-                    if 'min' in range_spec:
-                        mask &= df[field] >= range_spec['min']
-                    if 'max' in range_spec:
-                        mask &= df[field] <= range_spec['max']
+                df = df[~exclude_mask]
         
         # Convert back to list of Bond objects
-        filtered_isins = df[mask]['isin'].tolist()
+        filtered_isins = df['isin'].tolist()
         return [bond for bond in universe if bond.isin in filtered_isins]
     
     def apply_predefined_filter(self, universe: List[Bond], filter_name: str) -> List[Bond]:
@@ -174,3 +173,20 @@ class FilterManager:
         self.filters_file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.filters_file, "w") as f:
             json.dump(self._predefined_filters, f, indent=4)
+
+    def update_filter(self, name: str, filters: dict) -> bool:
+        """Update an existing filter while preserving its description"""
+        try:
+            if name in self._predefined_filters:
+                # Preserve the original description
+                description = self._predefined_filters[name]["description"]
+                self._predefined_filters[name] = {
+                    "description": description,
+                    "filters": filters
+                }
+                self.save_predefined_filters()
+                return True
+            return False
+        except Exception as e:
+            print(f"Error updating filter: {e}")
+            return False

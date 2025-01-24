@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 from app.data.models import Bond
 from app.filters import FilterManager
 import uuid
+from datetime import datetime
 
 def delete_condition(group_id: str, condition_index: int):
     """Callback to delete a condition from a group"""
@@ -19,6 +20,30 @@ def delete_group(group_id: str):
         if group['id'] != group_id
     ]
 
+def on_ytm_change():
+    """Callback for YTM slider changes"""
+    if 'ytm_range' in st.session_state:
+        st.session_state.active_filters['range_filters']['ytm'] = {
+            'min': st.session_state.ytm_range[0] / 100,
+            'max': st.session_state.ytm_range[1] / 100
+        }
+
+def on_duration_change():
+    """Callback for duration slider changes"""
+    if 'duration_range' in st.session_state:
+        st.session_state.active_filters['range_filters']['modified_duration'] = {
+            'min': st.session_state.duration_range[0],
+            'max': st.session_state.duration_range[1]
+        }
+
+def on_maturity_change():
+    """Callback for maturity year slider changes"""
+    if 'maturity_range' in st.session_state:
+        st.session_state.active_filters['range_filters']['maturity_year'] = {
+            'min': st.session_state.maturity_range[0],
+            'max': st.session_state.maturity_range[1]
+        }
+
 def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) -> Optional[List[Bond]]:
     """Render filter controls and return filtered universe"""
     if not universe:
@@ -32,7 +57,8 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
             'exclusion_groups': [],
             'range_filters': {
                 'ytm': {'min': min(bond.ytm for bond in universe), 'max': max(bond.ytm for bond in universe)},
-                'modified_duration': {'min': min(bond.modified_duration for bond in universe), 'max': max(bond.modified_duration for bond in universe)}
+                'modified_duration': {'min': min(bond.modified_duration for bond in universe), 'max': max(bond.modified_duration for bond in universe)},
+                'maturity_year': {'min': min(bond.maturity_date.year for bond in universe), 'max': max(bond.maturity_date.year for bond in universe)}
             }
         }
     elif not isinstance(st.session_state.active_filters, dict):
@@ -40,7 +66,8 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
             'exclusion_groups': [],
             'range_filters': {
                 'ytm': {'min': min(bond.ytm for bond in universe), 'max': max(bond.ytm for bond in universe)},
-                'modified_duration': {'min': min(bond.modified_duration for bond in universe), 'max': max(bond.modified_duration for bond in universe)}
+                'modified_duration': {'min': min(bond.modified_duration for bond in universe), 'max': max(bond.modified_duration for bond in universe)},
+                'maturity_year': {'min': min(bond.maturity_date.year for bond in universe), 'max': max(bond.maturity_date.year for bond in universe)}
             }
         }
     else:
@@ -59,19 +86,26 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
                 'min': min(bond.modified_duration for bond in universe),
                 'max': max(bond.modified_duration for bond in universe)
             }
+        if 'maturity_year' not in st.session_state.active_filters.get('range_filters', {}):
+            st.session_state.active_filters['range_filters']['maturity_year'] = {
+                'min': min(bond.maturity_date.year for bond in universe),
+                'max': max(bond.maturity_date.year for bond in universe)
+            }
     
     # Initialize session state
     if 'selected_predefined_filter' not in st.session_state:
         st.session_state.selected_predefined_filter = "None"
     if 'show_success_message' not in st.session_state:
         st.session_state.show_success_message = None
+    if 'filter_loaded' not in st.session_state:
+        st.session_state.filter_loaded = False
     
     # Predefined filters section
     st.write("Predefined Filters")
     predefined = filter_manager.get_predefined_filters()
     predefined_options = {"None": "No filter"} | predefined
     
-    # Handle save/delete operations before creating the selectbox
+    # Handle save/delete/update operations before creating the selectbox
     if 'save_filter_clicked' in st.session_state and st.session_state.save_filter_clicked:
         filter_name = st.session_state.get('filter_name', '')
         filter_desc = st.session_state.get('filter_desc', '')
@@ -86,7 +120,15 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
         if filter_manager.delete_filter(filter_to_delete):
             st.session_state.show_success_message = f"Filter '{filter_to_delete}' deleted"
             st.session_state.selected_predefined_filter = "None"
+            st.session_state.filter_loaded = False
         st.session_state.delete_filter_clicked = False
+        st.rerun()
+    
+    if 'update_filter_clicked' in st.session_state and st.session_state.update_filter_clicked:
+        filter_to_update = st.session_state.selected_predefined_filter
+        if filter_manager.update_filter(filter_to_update, st.session_state.active_filters):
+            st.session_state.show_success_message = f"Filter '{filter_to_update}' updated successfully"
+        st.session_state.update_filter_clicked = False
         st.rerun()
     
     # Show success message if exists
@@ -104,36 +146,33 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
     
     # Update session state and get filter details if changed
     if selected_filter != "None":
-        filter_config = filter_manager._predefined_filters[selected_filter]['filters']
-        
-        # Clear all filter-related widget states
-        for key in list(st.session_state.keys()):
-            if any(key.startswith(prefix) for prefix in ['cat_', 'val_', 'add_cond_', 'del_cond_', 'del_group_']):
-                del st.session_state[key]
-        
-        # Add IDs to groups and conditions if they don't exist
-        for group in filter_config['exclusion_groups']:
-            if 'id' not in group:
-                group['id'] = str(uuid.uuid4())
-            for condition in group['conditions']:
-                if 'id' not in condition:
-                    condition['id'] = str(uuid.uuid4())
-                # Ensure category and value are set
-                if 'category' not in condition:
-                    condition['category'] = 'sector'
-                if 'value' not in condition:
-                    condition['value'] = None
-        
-        st.session_state.active_filters = filter_config
+        # Only load filter if it's newly selected
+        if not st.session_state.filter_loaded or st.session_state.selected_predefined_filter != selected_filter:
+            filter_config = filter_manager._predefined_filters[selected_filter]['filters']
+            
+            # Add IDs to groups and conditions if they don't exist
+            for group in filter_config['exclusion_groups']:
+                if 'id' not in group:
+                    group['id'] = str(uuid.uuid4())
+                for condition in group['conditions']:
+                    if 'id' not in condition:
+                        condition['id'] = str(uuid.uuid4())
+            
+            st.session_state.active_filters = filter_config
+            st.session_state.filter_loaded = True
     
     # Custom filters section
     with st.expander("Custom Filters", expanded=True):
-        # Save/Delete filter controls
+        # Save/Delete/Update filter controls
         if selected_filter != "None":
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("🗑️ Delete Filter"):
                     st.session_state.delete_filter_clicked = True
+                    st.rerun()
+            with col2:
+                if st.button("📝 Update Filter"):
+                    st.session_state.update_filter_clicked = True
                     st.rerun()
         else:
             # Save filter form
@@ -174,7 +213,9 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
                     float(current_ytm.get('max', ytm_max) * 100)
                 ),
                 step=0.1,
-                format="%.1f%%"
+                format="%.1f%%",
+                key="ytm_range",
+                on_change=on_ytm_change
             )
             
             # Duration filter
@@ -191,15 +232,30 @@ def render_filter_controls(universe: List[Bond], filter_manager: FilterManager) 
                     float(current_dur.get('max', dur_max))
                 ),
                 step=0.1,
-                format="%.1f"
+                format="%.1f",
+                key="duration_range",
+                on_change=on_duration_change
+            )
+
+            # Maturity filter
+            st.write("Maturity Year")
+            mat_min = min(bond.maturity_date.year for bond in universe)
+            mat_max = max(bond.maturity_date.year for bond in universe)
+            current_mat = st.session_state.active_filters.get('range_filters', {}).get('maturity_year', {})
+            mat_range = st.slider(
+                "",
+                min_value=int(mat_min),
+                max_value=int(mat_max),
+                value=(
+                    int(current_mat.get('min', mat_min)),
+                    int(current_mat.get('max', mat_max))
+                ),
+                step=1,
+                format="%d",
+                key="maturity_range",
+                on_change=on_maturity_change
             )
             
-            # Update range filters in session state
-            st.session_state.active_filters['range_filters'] = {
-                'ytm': {'min': ytm_range[0] / 100, 'max': ytm_range[1] / 100},
-                'modified_duration': {'min': dur_range[0], 'max': dur_range[1]}
-            }
-        
         with col2:
             st.write("Exclusion Rules")
             
