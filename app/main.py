@@ -19,7 +19,9 @@ from app.data.models import Bond, PortfolioConstraints, CreditRating
 from app.optimization.engine import PortfolioOptimizer
 from app.ui.components import (
     render_constraints_form,
-    display_optimization_results
+    display_optimization_results,
+    render_main_constraints_form,
+    render_optional_constraints
 )
 from app.ui.filter_components import render_filter_controls
 from app.filters import FilterManager
@@ -215,11 +217,19 @@ def main():
             st.session_state.filtered_universe = filtered_universe
             
     # Get constraints and check if optimization should run
-    constraints, run_optimization = render_constraints_form()
-    if constraints:
-        st.session_state.constraints = constraints
-        
-        if run_optimization:
+    constraints, run_optimization = render_main_constraints_form(st.session_state.universe or [])
+    
+    # Always render optional constraints
+    render_optional_constraints(st.session_state.universe or [])
+    
+    # Display optimization results below the constraints form
+    results_container = st.container()
+    
+    with results_container:
+        if constraints and run_optimization:
+            st.markdown("---")
+            st.header("Optimization Results")
+            
             try:
                 # Use filtered universe if available, otherwise use full universe
                 optimization_universe = st.session_state.filtered_universe or st.session_state.universe
@@ -233,7 +243,7 @@ def main():
                         if result.constraints_satisfied:
                             st.success(f"Optimization completed successfully in {result.solve_time:.2f} seconds")
                         display_optimization_results(result, optimization_universe, constraints.total_size)
-                        
+
                         # Add download buttons for results
                         portfolio_df = pd.DataFrame([{
                             'ISIN': isin,

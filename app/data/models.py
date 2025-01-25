@@ -99,16 +99,23 @@ class PortfolioConstraints(BaseModel):
     rating_tolerance: int = Field(1, description="Number of notches tolerance for rating")
     min_yield: float = Field(..., description="Minimum portfolio yield")
     max_issuer_exposure: float = Field(0.1, description="Maximum exposure to single issuer")
-    rating_constraints: Dict[CreditRating, Tuple[float, float]] = Field(
-        default_factory=dict, description="Min/Max allocation per rating"
-    )
     grade_constraints: Dict[RatingGrade, Tuple[float, float]] = Field(
-        default_factory=dict, description="Min/Max allocation per rating grade (IG/HY)"
+        default_factory=dict,
+        description="Grade-specific constraints as (min, max) tuples"
     )
-    maturity_bucket_constraints: Dict[str, Tuple[float, float]] = Field(
-        default_factory=dict, description="Min/Max allocation per maturity bucket"
+    max_hy_position_size: Optional[float] = Field(None, description="Maximum size for high yield positions")
+    sector_constraints: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Maximum exposure per sector"
     )
-    min_coupon_income: float = Field(0.0, description="Minimum annual coupon income")
+    payment_rank_constraints: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Maximum exposure per payment rank"
+    )
+    maturity_bucket_constraints: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Maximum exposure per maturity bucket (format: 'YYYY-YYYY')"
+    )
 
 class OptimizationResult(BaseModel):
     success: bool = Field(..., description="Whether the optimization succeeded")

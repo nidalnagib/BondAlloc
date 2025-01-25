@@ -142,9 +142,56 @@ class PortfolioOptimizer:
                     if max_weight < 1:
                         logger.info(f"Adding maximum High Yield constraint: {max_weight:.1%}")
                         constraints.append(hy_exposure <= max_weight)
+                        
+                    # Add max position size for HY bonds if specified
+                    if self.constraints.max_hy_position_size is not None:
+                        logger.info(f"Adding maximum High Yield position size constraint: {self.constraints.max_hy_position_size:.1%}")
+                        for i in hy_indices:
+                            constraints.append(self.weights[i] <= self.constraints.max_hy_position_size)
+                            
                 elif min_weight > 0:
                     logger.warning(f"No High Yield bonds available but minimum weight of {min_weight:.1%} required")
                     return []  # Return empty constraints to indicate infeasibility
+
+        # Sector constraints
+        if self.constraints.sector_constraints:
+            logger.info("Processing sector constraints")
+            for sector, max_weight in self.constraints.sector_constraints.items():
+                sector_indices = [i for i, bond in enumerate(self.universe) if bond.sector == sector]
+                if sector_indices:
+                    logger.info(f"Adding {sector} sector constraint: max={max_weight:.1%}")
+                    sector_exposure = cp.sum(self.weights[sector_indices])
+                    constraints.append(sector_exposure <= max_weight)
+                else:
+                    logger.warning(f"No bonds found for sector: {sector}")
+
+        # Payment rank constraints
+        if self.constraints.payment_rank_constraints:
+            logger.info("Processing payment rank constraints")
+            for rank, max_weight in self.constraints.payment_rank_constraints.items():
+                rank_indices = [i for i, bond in enumerate(self.universe) if bond.payment_rank == rank]
+                if rank_indices:
+                    logger.info(f"Adding {rank} payment rank constraint: max={max_weight:.1%}")
+                    rank_exposure = cp.sum(self.weights[rank_indices])
+                    constraints.append(rank_exposure <= max_weight)
+                else:
+                    logger.warning(f"No bonds found for payment rank: {rank}")
+
+        # Maturity bucket constraints
+        if self.constraints.maturity_bucket_constraints:
+            logger.info("Processing maturity bucket constraints")
+            for bucket, max_weight in self.constraints.maturity_bucket_constraints.items():
+                start_year, end_year = map(int, bucket.split('-'))
+                bucket_indices = [
+                    i for i, bond in enumerate(self.universe)
+                    if start_year <= bond.maturity_date.year <= end_year
+                ]
+                if bucket_indices:
+                    logger.info(f"Adding maturity bucket {bucket} constraint: max={max_weight:.1%}")
+                    bucket_exposure = cp.sum(self.weights[bucket_indices])
+                    constraints.append(bucket_exposure <= max_weight)
+                else:
+                    logger.warning(f"No bonds found for maturity bucket: {bucket}")
 
         logger.info(f"Total number of constraints: {len(constraints)}")
         return constraints

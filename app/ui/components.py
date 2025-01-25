@@ -18,6 +18,32 @@ def initialize_constraint_state():
         st.session_state.min_hy = 0
     if 'max_hy' not in st.session_state:
         st.session_state.max_hy = 100
+    if 'sector_constraints' not in st.session_state:
+        st.session_state.sector_constraints = []  # List of (sector, max_exposure) tuples
+    if 'payment_rank_constraints' not in st.session_state:
+        st.session_state.payment_rank_constraints = []  # List of (rank, max_exposure) tuples
+    if 'maturity_bucket_constraints' not in st.session_state:
+        st.session_state.maturity_bucket_constraints = []  # List of (start_year, end_year, max_exposure) tuples
+
+
+def add_constraint_row(constraint_type: str, value: tuple):
+    """Add a new constraint row of the specified type"""
+    if constraint_type == 'sector':
+        st.session_state.sector_constraints.append(value)
+    elif constraint_type == 'payment_rank':
+        st.session_state.payment_rank_constraints.append(value)
+    elif constraint_type == 'maturity_bucket':
+        st.session_state.maturity_bucket_constraints.append(value)
+
+
+def remove_constraint_row(constraint_type: str, index: int):
+    """Remove a constraint row of the specified type"""
+    if constraint_type == 'sector':
+        st.session_state.sector_constraints.pop(index)
+    elif constraint_type == 'payment_rank':
+        st.session_state.payment_rank_constraints.pop(index)
+    elif constraint_type == 'maturity_bucket':
+        st.session_state.maturity_bucket_constraints.pop(index)
 
 
 def validate_min_max(min_val: float, max_val: float, field_name: str) -> bool:
@@ -28,17 +54,24 @@ def validate_min_max(min_val: float, max_val: float, field_name: str) -> bool:
     return True
 
 
-def render_constraints_form() -> Tuple[Optional[PortfolioConstraints], bool]:
-    """Render form for portfolio constraints"""
-    # Initialize session state
-    initialize_constraint_state()
+def render_main_constraints_form(universe: List[Bond]):
+    """Render the main constraints form"""
+    
+    # Initialize session state for constraints if not exists
+    if 'sector_constraints' not in st.session_state:
+        st.session_state.sector_constraints = []
+    if 'payment_rank_constraints' not in st.session_state:
+        st.session_state.payment_rank_constraints = []
+    if 'maturity_bucket_constraints' not in st.session_state:
+        st.session_state.maturity_bucket_constraints = []
 
+    # Main Constraints Form
     with st.form("constraints_form"):
         st.subheader("Portfolio Constraints")
-
-        # Total size
+        
+        # Portfolio size
         total_size = st.number_input(
-            "Total Portfolio Size",
+            "Portfolio Size",
             min_value=1_000_000,
             max_value=1_000_000_000,
             value=10_000_000,
@@ -46,28 +79,54 @@ def render_constraints_form() -> Tuple[Optional[PortfolioConstraints], bool]:
             format="%d"
         )
 
-        # Securities count
+        # Minimum yield constraint
+        min_yield = st.number_input(
+            "Minimum Portfolio Yield (%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=4.0,
+            step=0.1,
+            format="%.1f"
+        ) / 100.0
+
+        # Duration constraints
         col1, col2 = st.columns(2)
         with col1:
-            min_securities = st.number_input(
-                "Minimum Securities",
-                min_value=1,
-                max_value=100,
-                value=st.session_state.min_securities,
-                step=1,
-                key="min_securities_input"
+            target_duration = st.number_input(
+                "Target Duration",
+                min_value=0.0,
+                max_value=30.0,
+                value=5.0,
+                step=0.5
             )
         with col2:
-            max_securities = st.number_input(
-                "Maximum Securities",
-                min_value=1,
-                max_value=100,
-                value=st.session_state.max_securities,
-                step=1,
-                key="max_securities_input"
+            duration_tolerance = st.number_input(
+                "Duration Tolerance",
+                min_value=0.1,
+                max_value=5.0,
+                value=0.5,
+                step=0.1
             )
 
-        # Position size
+        # Rating constraints
+        col1, col2 = st.columns(2)
+        with col1:
+            min_rating = st.selectbox(
+                "Minimum Rating",
+                options=list(CreditRating),
+                format_func=lambda x: x.display(),
+                index=len(CreditRating) - 3  # Default to BBB-
+            )
+        with col2:
+            rating_tolerance = st.number_input(
+                "Rating Tolerance (notches)",
+                min_value=0,
+                max_value=5,
+                value=2,
+                step=1
+            )
+
+        # Position size constraints
         col1, col2 = st.columns(2)
         with col1:
             min_position_size = st.number_input(
@@ -81,147 +140,316 @@ def render_constraints_form() -> Tuple[Optional[PortfolioConstraints], bool]:
         with col2:
             max_position_size = st.number_input(
                 "Maximum Position Size (%)",
-                min_value=min_position_size * 100,
+                min_value=0.0,
                 max_value=100.0,
-                value=max(20.0, min_position_size * 100),
+                value=10.0,
                 step=0.1,
                 format="%.1f"
             ) / 100.0
 
-        # Duration
+        # Number of securities constraints
         col1, col2 = st.columns(2)
         with col1:
-            target_duration = st.number_input(
-                "Target Duration",
-                min_value=0.0,
-                max_value=30.0,
-                value=5.0,
-                step=0.1,
-                format="%.2f"
+            min_securities = st.number_input(
+                "Minimum Securities",
+                min_value=1,
+                max_value=100,
+                value=10,
+                step=1
             )
         with col2:
-            duration_tolerance = st.number_input(
-                "Duration Tolerance",
-                min_value=0.0,
-                max_value=5.0,
-                value=0.9,
-                step=0.1,
-                format="%.2f"
-            )
-
-        # Rating
-        col1, col2 = st.columns(2)
-        with col1:
-            # Create rating options with display values
-            rating_options = {r: r.display() for r in CreditRating}
-            rating_display_to_enum = {v: k for k, v in rating_options.items()}
-
-            min_rating_display = st.selectbox(
-                "Minimum Rating",
-                options=list(rating_display_to_enum.keys()),
-                index=list(rating_display_to_enum.keys()).index('AA')  # Default to AA
-            )
-            min_rating = rating_display_to_enum[min_rating_display]
-        with col2:
-            rating_tolerance = st.number_input(
-                "Rating Tolerance (notches)",
-                min_value=0,
-                max_value=5,
-                value=1,
+            max_securities = st.number_input(
+                "Maximum Securities",
+                min_value=min_securities,
+                max_value=100,
+                value=max(20, min_securities),
                 step=1
             )
 
-        # Yield
-        col1, _ = st.columns([1, 1])
-        with col1:
-            min_yield = st.number_input(
-                "Minimum Yield (%)",
-                min_value=0.0,
-                max_value=100.0,
-                value=2.0,
-                step=0.1,
-                format="%.1f"
-            ) / 100.0
+        # Issuer exposure constraint
+        max_issuer_exposure = st.number_input(
+            "Maximum Issuer Exposure (%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=20.0,
+            step=0.1,
+            format="%.1f"
+        ) / 100.0
 
-        # Issuer exposure
-        col1, _ = st.columns([1, 1])
-        with col1:
-            max_issuer_exposure = st.number_input(
-                "Maximum Issuer Exposure (%)",
-                min_value=0.0,
-                max_value=100.0,
-                value=20.0,
-                step=0.1,
-                format="%.1f"
-            ) / 100.0
-
-        # Grade constraints
-        st.subheader("High Yield Exposure Constraints")
-        st.info("Set minimum and maximum exposure to High Yield bonds")
-
-        col1, col2 = st.columns(2)
+        # High yield constraints
+        st.subheader("High Yield Constraints")
+        col1, col2, col3 = st.columns(3)
         with col1:
             min_hy = st.number_input(
                 "Minimum HY (%)",
-                min_value=0,
-                max_value=100,
-                value=st.session_state.min_hy,
-                step=5,
-                key="min_hy_input"
-            )
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=5.0,
+                format="%.1f",
+                key="min_hy"
+            ) / 100.0
         with col2:
             max_hy = st.number_input(
                 "Maximum HY (%)",
-                min_value=0,
-                max_value=100,
-                value=st.session_state.max_hy,
-                step=5,
-                key="max_hy_input"
-            )
+                min_value=0.0,
+                max_value=100.0,
+                value=30.0,
+                step=5.0,
+                format="%.1f",
+                key="max_hy"
+            ) / 100.0
+        with col3:
+            max_hy_position = st.number_input(
+                "Maximum HY Position Size (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=5.0,
+                step=0.1,
+                format="%.1f",
+                key="max_hy_position"
+            ) / 100.0
 
-        # Add some space before the submit button
-        st.write("")
-        st.write("")
-
-        # Center-align the submit button with a larger size
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            submitted = st.form_submit_button("Run Optimization", use_container_width=True, type="primary")
+        # Submit button
+        submitted = st.form_submit_button("Run Optimization")
 
         if submitted:
-            # Update session state with new values
-            st.session_state.min_securities = min_securities
-            st.session_state.max_securities = max_securities
-            st.session_state.min_hy = min_hy
-            st.session_state.max_hy = max_hy
-
-            # Validate min/max values
-            if not validate_min_max(min_securities, max_securities, "Securities count"):
-                return None, False
-            if not validate_min_max(min_hy, max_hy, "High Yield allocation"):
-                return None, False
-            if not validate_min_max(min_position_size, max_position_size, "Position size"):
-                return None, False
-
+            # Create PortfolioConstraints object
             constraints = PortfolioConstraints(
                 total_size=total_size,
-                min_securities=min_securities,
-                max_securities=max_securities,
                 target_duration=target_duration,
                 duration_tolerance=duration_tolerance,
                 min_rating=min_rating,
                 rating_tolerance=rating_tolerance,
-                min_yield=min_yield,
                 min_position_size=min_position_size,
                 max_position_size=max_position_size,
+                min_securities=min_securities,
+                max_securities=max_securities,
                 max_issuer_exposure=max_issuer_exposure,
+                min_yield=min_yield,
                 grade_constraints={
-                    RatingGrade.HIGH_YIELD: (min_hy / 100, max_hy / 100)
+                    RatingGrade.HIGH_YIELD: (min_hy, max_hy)
+                } if max_hy > 0 else None,
+                max_hy_position_size=max_hy_position,
+                sector_constraints=dict(st.session_state.sector_constraints),
+                payment_rank_constraints=dict(st.session_state.payment_rank_constraints),
+                maturity_bucket_constraints={
+                    f"{start_year}-{end_year}": max_exposure 
+                    for start_year, end_year, max_exposure in st.session_state.maturity_bucket_constraints
                 }
             )
             return constraints, True
+    
+    return None, False
 
-        return None, False
+
+def render_optional_constraints(universe: List[Bond]):
+    """Render the optional constraints section"""
+    
+    # Get unique sectors and payment ranks from universe
+    available_sectors = sorted(list(set(bond.sector for bond in universe if bond.sector)))
+    available_payment_ranks = sorted(list(set(bond.payment_rank for bond in universe if bond.payment_rank)))
+    
+    st.markdown("---")
+    st.subheader("Optional Constraints")
+    
+    # Sector constraints
+    with st.expander("Sector Constraints", expanded=False):
+        st.info("Add maximum exposure constraints for specific sectors")
+        
+        # Display existing sector constraints
+        for i, (sector, max_exposure) in enumerate(st.session_state.sector_constraints):
+            col1, col2, col3 = st.columns([2, 1, 0.2])
+            with col1:
+                sector = st.selectbox(
+                    f"Sector {i+1}",
+                    options=available_sectors,
+                    index=available_sectors.index(sector) if sector in available_sectors else 0,
+                    key=f"sector_{i}"
+                )
+            with col2:
+                max_exposure = st.number_input(
+                    f"Max Exposure {i+1} (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=max_exposure * 100,
+                    step=0.1,
+                    format="%.1f",
+                    key=f"sector_exposure_{i}"
+                ) / 100.0
+            with col3:
+                if st.button("🗑️", key=f"remove_sector_{i}"):
+                    remove_constraint_row('sector', i)
+                    st.rerun()
+            st.session_state.sector_constraints[i] = (sector, max_exposure)
+        
+        # Add new sector constraint
+        with st.form(key="add_sector_form"):
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                new_sector = st.selectbox(
+                    "New Sector",
+                    options=available_sectors,
+                    key="new_sector_input"
+                )
+            with col2:
+                new_sector_exposure = st.number_input(
+                    "Max Exposure (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=20.0,
+                    step=0.1,
+                    format="%.1f",
+                    key="new_sector_exposure"
+                ) / 100.0
+            
+            if st.form_submit_button("Add Sector"):
+                if new_sector:
+                    add_constraint_row('sector', (new_sector, new_sector_exposure))
+                    st.rerun()
+                else:
+                    st.error("Please select a sector")
+
+    # Payment rank constraints
+    with st.expander("Payment Rank Constraints", expanded=False):
+        st.info("Add maximum exposure constraints for specific payment ranks")
+        
+        # Display existing payment rank constraints
+        for i, (rank, max_exposure) in enumerate(st.session_state.payment_rank_constraints):
+            col1, col2, col3 = st.columns([2, 1, 0.2])
+            with col1:
+                rank = st.selectbox(
+                    f"Payment Rank {i+1}",
+                    options=available_payment_ranks,
+                    index=available_payment_ranks.index(rank) if rank in available_payment_ranks else 0,
+                    key=f"rank_{i}"
+                )
+            with col2:
+                max_exposure = st.number_input(
+                    f"Max Exposure {i+1} (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=max_exposure * 100,
+                    step=0.1,
+                    format="%.1f",
+                    key=f"rank_exposure_{i}"
+                ) / 100.0
+            with col3:
+                if st.button("🗑️", key=f"remove_rank_{i}"):
+                    remove_constraint_row('payment_rank', i)
+                    st.rerun()
+            st.session_state.payment_rank_constraints[i] = (rank, max_exposure)
+        
+        # Add new payment rank constraint
+        with st.form(key="add_rank_form"):
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                new_rank = st.selectbox(
+                    "New Payment Rank",
+                    options=available_payment_ranks,
+                    key="new_rank_input"
+                )
+            with col2:
+                new_rank_exposure = st.number_input(
+                    "Max Exposure (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=20.0,
+                    step=0.1,
+                    format="%.1f",
+                    key="new_rank_exposure"
+                ) / 100.0
+            
+            if st.form_submit_button("Add Payment Rank"):
+                if new_rank:
+                    add_constraint_row('payment_rank', (new_rank, new_rank_exposure))
+                    st.rerun()
+                else:
+                    st.error("Please select a payment rank")
+
+    # Maturity bucket constraints
+    with st.expander("Maturity Bucket Constraints", expanded=False):
+        st.info("Add maximum exposure constraints for specific maturity buckets")
+        
+        # Display existing maturity bucket constraints
+        for i, (start_year, end_year, max_exposure) in enumerate(st.session_state.maturity_bucket_constraints):
+            col1, col2, col3, col4 = st.columns([1, 1, 1, 0.2])
+            with col1:
+                start_year = st.number_input(
+                    f"Start Year {i+1}",
+                    min_value=2020,
+                    max_value=2050,
+                    value=start_year,
+                    step=1,
+                    key=f"start_year_{i}"
+                )
+            with col2:
+                end_year = st.number_input(
+                    f"End Year {i+1}",
+                    min_value=start_year,
+                    max_value=2050,
+                    value=max(end_year, start_year),
+                    step=1,
+                    key=f"end_year_{i}"
+                )
+            with col3:
+                max_exposure = st.number_input(
+                    f"Max Exposure {i+1} (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=max_exposure * 100,
+                    step=0.1,
+                    format="%.1f",
+                    key=f"maturity_exposure_{i}"
+                ) / 100.0
+            with col4:
+                if st.button("🗑️", key=f"remove_maturity_{i}"):
+                    remove_constraint_row('maturity_bucket', i)
+                    st.rerun()
+            st.session_state.maturity_bucket_constraints[i] = (start_year, end_year, max_exposure)
+        
+        # Add new maturity bucket constraint
+        with st.form(key="add_maturity_form"):
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col1:
+                new_start_year = st.number_input(
+                    "Start Year",
+                    min_value=2020,
+                    max_value=2050,
+                    value=2024,
+                    step=1,
+                    key="new_start_year"
+                )
+            with col2:
+                new_end_year = st.number_input(
+                    "End Year",
+                    min_value=new_start_year,
+                    max_value=2050,
+                    value=new_start_year + 1,
+                    step=1,
+                    key="new_end_year"
+                )
+            with col3:
+                new_maturity_exposure = st.number_input(
+                    "Max Exposure (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=20.0,
+                    step=0.1,
+                    format="%.1f",
+                    key="new_maturity_exposure"
+                ) / 100.0
+            
+            if st.form_submit_button("Add Maturity Bucket"):
+                add_constraint_row('maturity_bucket', (new_start_year, new_end_year, new_maturity_exposure))
+                st.rerun()
+
+
+def render_constraints_form(universe: List[Bond]):
+    """Render both main and optional constraints forms"""
+    constraints, run_optimization = render_main_constraints_form(universe)
+    render_optional_constraints(universe)
+    return constraints, run_optimization
 
 
 def display_optimization_results(result: OptimizationResult, universe: List[Bond], total_size: float):
