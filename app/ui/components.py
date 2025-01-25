@@ -8,8 +8,31 @@ from datetime import datetime
 import numpy as np
 
 
+def initialize_constraint_state():
+    """Initialize session state for constraints if not exists"""
+    if 'min_securities' not in st.session_state:
+        st.session_state.min_securities = 5
+    if 'max_securities' not in st.session_state:
+        st.session_state.max_securities = 15
+    if 'min_hy' not in st.session_state:
+        st.session_state.min_hy = 0
+    if 'max_hy' not in st.session_state:
+        st.session_state.max_hy = 100
+
+
+def validate_min_max(min_val: float, max_val: float, field_name: str) -> bool:
+    """Validate min/max values and show error if invalid"""
+    if min_val > max_val:
+        st.error(f"{field_name}: Minimum value ({min_val}) cannot be greater than maximum value ({max_val})")
+        return False
+    return True
+
+
 def render_constraints_form() -> Tuple[Optional[PortfolioConstraints], bool]:
     """Render form for portfolio constraints"""
+    # Initialize session state
+    initialize_constraint_state()
+
     with st.form("constraints_form"):
         st.subheader("Portfolio Constraints")
 
@@ -30,17 +53,40 @@ def render_constraints_form() -> Tuple[Optional[PortfolioConstraints], bool]:
                 "Minimum Securities",
                 min_value=1,
                 max_value=100,
-                value=5,
-                step=1
+                value=st.session_state.min_securities,
+                step=1,
+                key="min_securities_input"
             )
         with col2:
             max_securities = st.number_input(
                 "Maximum Securities",
-                min_value=min_securities,
+                min_value=1,
                 max_value=100,
-                value=max(15, min_securities),
-                step=1
+                value=st.session_state.max_securities,
+                step=1,
+                key="max_securities_input"
             )
+
+        # Position size
+        col1, col2 = st.columns(2)
+        with col1:
+            min_position_size = st.number_input(
+                "Minimum Position Size (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=1.0,
+                step=0.1,
+                format="%.1f"
+            ) / 100.0
+        with col2:
+            max_position_size = st.number_input(
+                "Maximum Position Size (%)",
+                min_value=min_position_size * 100,
+                max_value=100.0,
+                value=max(20.0, min_position_size * 100),
+                step=0.1,
+                format="%.1f"
+            ) / 100.0
 
         # Duration
         col1, col2 = st.columns(2)
@@ -76,7 +122,6 @@ def render_constraints_form() -> Tuple[Optional[PortfolioConstraints], bool]:
                 index=list(rating_display_to_enum.keys()).index('AA')  # Default to AA
             )
             min_rating = rating_display_to_enum[min_rating_display]
-
         with col2:
             rating_tolerance = st.number_input(
                 "Rating Tolerance (notches)",
@@ -98,27 +143,6 @@ def render_constraints_form() -> Tuple[Optional[PortfolioConstraints], bool]:
                 format="%.1f"
             ) / 100.0
 
-        # Position size
-        col1, col2 = st.columns(2)
-        with col1:
-            min_position_size = st.number_input(
-                "Minimum Position Size (%)",
-                min_value=0.0,
-                max_value=100.0,
-                value=1.0,
-                step=0.1,
-                format="%.1f"
-            ) / 100.0
-        with col2:
-            max_position_size = st.number_input(
-                "Maximum Position Size (%)",
-                min_value=min_position_size * 100,
-                max_value=100.0,
-                value=max(20.0, min_position_size * 100),
-                step=0.1,
-                format="%.1f"
-            ) / 100.0
-
         # Issuer exposure
         col1, _ = st.columns([1, 1])
         with col1:
@@ -134,74 +158,69 @@ def render_constraints_form() -> Tuple[Optional[PortfolioConstraints], bool]:
         # Grade constraints
         st.subheader("High Yield Exposure Constraints")
         st.info("Set minimum and maximum exposure to High Yield bonds")
-        
-        grade_constraints = {}
-        
-        # Initialize session state for HY values if not exists
-        if 'min_hy' not in st.session_state:
-            st.session_state.min_hy = 0.0
-        if 'max_hy' not in st.session_state:
-            st.session_state.max_hy = 40.0
-            
+
         col1, col2 = st.columns(2)
         with col1:
             min_hy = st.number_input(
-                "Min High Yield (%)",
-                min_value=0.0,
-                max_value=100.0,
+                "Minimum HY (%)",
+                min_value=0,
+                max_value=100,
                 value=st.session_state.min_hy,
-                step=1.0,
-                format="%.1f",
-                key="min_high_yield"
-            ) / 100.0
-            st.session_state.min_hy = min_hy * 100
-            
+                step=5,
+                key="min_hy_input"
+            )
         with col2:
-            # Ensure max_hy is at least equal to min_hy
-            current_max = max(st.session_state.max_hy, st.session_state.min_hy)
             max_hy = st.number_input(
-                "Max High Yield (%)",
-                min_value=0.0,  # Remove dependency on min_hy
-                max_value=100.0,
-                value=current_max,
-                step=1.0,
-                format="%.1f",
-                key="max_high_yield"
-            ) / 100.0
-            st.session_state.max_hy = max_hy * 100
-            
-        # Validate and adjust if needed
-        if max_hy < min_hy:
-            st.warning("Maximum High Yield exposure cannot be less than minimum. Adjusting maximum to match minimum.")
-            max_hy = min_hy
-            st.session_state.max_hy = min_hy * 100
-        
-        if min_hy > 0 or max_hy < 1:
-            grade_constraints[RatingGrade.HIGH_YIELD] = (min_hy, max_hy)
+                "Maximum HY (%)",
+                min_value=0,
+                max_value=100,
+                value=st.session_state.max_hy,
+                step=5,
+                key="max_hy_input"
+            )
 
-        submitted = st.form_submit_button("Run Optimization")
+        # Add some space before the submit button
+        st.write("")
+        st.write("")
+
+        # Center-align the submit button with a larger size
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            submitted = st.form_submit_button("Run Optimization", use_container_width=True, type="primary")
 
         if submitted:
-            try:
-                constraints = PortfolioConstraints(
-                    total_size=total_size,
-                    min_securities=min_securities,
-                    max_securities=max_securities,
-                    target_duration=target_duration,
-                    duration_tolerance=duration_tolerance,
-                    min_rating=min_rating,
-                    rating_tolerance=rating_tolerance,
-                    min_yield=min_yield,
-                    min_position_size=min_position_size,
-                    max_position_size=max_position_size,
-                    max_issuer_exposure=max_issuer_exposure,
-                    grade_constraints=grade_constraints
-                )
-                return constraints, True
-            except Exception as e:
-                st.error(f"Invalid constraints: {str(e)}")
+            # Update session state with new values
+            st.session_state.min_securities = min_securities
+            st.session_state.max_securities = max_securities
+            st.session_state.min_hy = min_hy
+            st.session_state.max_hy = max_hy
+
+            # Validate min/max values
+            if not validate_min_max(min_securities, max_securities, "Securities count"):
                 return None, False
-        
+            if not validate_min_max(min_hy, max_hy, "High Yield allocation"):
+                return None, False
+            if not validate_min_max(min_position_size, max_position_size, "Position size"):
+                return None, False
+
+            constraints = PortfolioConstraints(
+                total_size=total_size,
+                min_securities=min_securities,
+                max_securities=max_securities,
+                target_duration=target_duration,
+                duration_tolerance=duration_tolerance,
+                min_rating=min_rating,
+                rating_tolerance=rating_tolerance,
+                min_yield=min_yield,
+                min_position_size=min_position_size,
+                max_position_size=max_position_size,
+                max_issuer_exposure=max_issuer_exposure,
+                grade_constraints={
+                    RatingGrade.HIGH_YIELD: (min_hy / 100, max_hy / 100)
+                }
+            )
+            return constraints, True
+
         return None, False
 
 
@@ -251,16 +270,16 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
     # Portfolio breakdown
     st.subheader("Portfolio Breakdown")
     col1, col2 = st.columns(2)
-    
+
     # Create portfolio dataframe
     portfolio_data = []
-    
+
     for isin, weight in result.portfolio.items():
         bond = next(b for b in universe if b.isin == isin)
         notional = weight * total_size  # Use passed total_size parameter
         min_notional = bond.min_piece
         increment = bond.increment_size
-        
+
         # Calculate rounded notional
         if notional < min_notional:
             warning = f"Position too small (min: {min_notional:,.0f})"
@@ -272,7 +291,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
                 warning = f"Rounded up to minimum piece size ({min_notional:,.0f})"
             else:
                 warning = ""
-                
+
         portfolio_data.append({
             'isin': isin,
             'weight': weight,
@@ -293,10 +312,10 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             'sector': bond.sector
         })
     df_portfolio = pd.DataFrame(portfolio_data)
-    
+
     # Add rounded weight column
     df_portfolio['rounded_weight'] = df_portfolio['rounded_notional'] / total_size
-    
+
     # Country breakdown pie chart
     with col1:
         country_weights = df_portfolio.groupby('country')['weight'].sum()
@@ -320,15 +339,15 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             yaxis_title='Sector',
             showlegend=False,
             height=400,
-            yaxis={'categoryorder':'total ascending'}
+            yaxis={'categoryorder': 'total ascending'}
         )
         st.plotly_chart(fig, use_container_width=True)
-    
+
     # Rating breakdown and Payment Rank
     with col2:
         # Create two bar charts
         fig = go.Figure()
-        
+
         # Detailed rating breakdown
         rating_weights = df_portfolio.groupby('rating')['weight'].sum()
         fig.add_trace(go.Bar(
@@ -337,7 +356,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             name='By Rating',
             visible=True
         ))
-        
+
         # IG/HY breakdown
         grade_weights = df_portfolio.groupby('grade')['weight'].sum()
         fig.add_trace(go.Bar(
@@ -346,7 +365,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             name='By Grade',
             visible=False
         ))
-        
+
         # Add buttons to switch between views
         fig.update_layout(
             title='Rating Breakdown',
@@ -376,7 +395,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
     years = range(datetime.now().year, max(df_portfolio['maturity']).year + 1)
     coupons = []
     redemptions = []
-    
+
     for year in years:
         # Calculate coupon payments using rounded notionals
         year_coupons = sum(
@@ -385,7 +404,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             if row['maturity'].year >= year
         )
         coupons.append(year_coupons)
-        
+
         # Calculate redemptions using rounded notionals
         year_redemptions = sum(
             row['rounded_notional']
@@ -393,7 +412,13 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             if row['maturity'].year == year
         )
         redemptions.append(year_redemptions)
-    
+
+    cash_flows = pd.DataFrame({
+        'year': years,
+        'coupons': coupons,
+        'redemptions': redemptions
+    })
+
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=list(years),
@@ -405,7 +430,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
         y=redemptions,
         name='Redemptions'
     ))
-    
+
     fig.update_layout(
         title='Cash Flow Distribution',
         xaxis_title='Year',
@@ -413,6 +438,21 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
         barmode='stack'
     )
     st.plotly_chart(fig, use_container_width=True)
+
+    with st.expander("Cash Flows Table"):
+        st.dataframe(cash_flows,
+                     column_config={
+                         'year': st.column_config.NumberColumn(
+                             'Year',
+                             format="%.0f"),
+                         'redemptions': st.column_config.NumberColumn(
+                             'Redemptions',
+                             format="%.0f"),  # No decimal place,
+                         'coupons': st.column_config.NumberColumn(
+                             'Coupons',
+                             format="%.2f"),  # Two decimal place,
+                     },
+                     hide_index=True)
 
     col1, col2 = st.columns(2)
 
@@ -434,7 +474,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             },
             hide_index=True
         )
-    
+
     with col2:
         # Top 10 bonds
         st.subheader("Top 10 Bonds")
@@ -445,7 +485,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
         top_bonds['ytm'] = top_bonds['ytm'].map('{:.2%}'.format)
         top_bonds['weight'] = top_bonds['weight'].map('{:.2%}'.format)
         top_bonds['maturity'] = top_bonds['maturity'].dt.strftime('%Y-%m-%d')
-    
+
         st.dataframe(top_bonds, hide_index=True)
 
     # Complete portfolio
@@ -460,7 +500,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
     df_display['rounded_notional'] = df_display['rounded_notional'].map('{:,.2f}'.format)
     df_display['min_piece'] = df_display['min_piece'].map('{:,.2f}'.format)
     df_display['increment'] = df_display['increment'].map('{:,.2f}'.format)
-    
+
     st.dataframe(
         df_display,
         column_config={
@@ -485,7 +525,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
         },
         hide_index=True
     )
-    
+
     # Add CSV download button
     csv = df_display.to_csv(index=False).encode('utf-8')
     st.download_button(
