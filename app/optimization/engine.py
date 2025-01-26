@@ -255,7 +255,8 @@ class PortfolioOptimizer:
                     'yield': 0.0,
                     'duration': 0.0,
                     'rating': 0.0,
-                    'number_of_securities': 0
+                    'number_of_securities': 0,
+                    'number_of_issuers': 0
                 }
                 return OptimizationResult(
                     success=False,
@@ -274,7 +275,8 @@ class PortfolioOptimizer:
                 'yield': 0.0,
                 'duration': 0.0,
                 'rating': 0.0,
-                'number_of_securities': 0
+                'number_of_securities': 0,
+                'number_of_issuers': 0
             }
             return OptimizationResult(
                 success=False,
@@ -305,6 +307,10 @@ class PortfolioOptimizer:
         
         # Calculate number of securities
         num_securities = sum(1 for w in weights if w > 1e-4)
+
+        # Calculate number of issuers
+        issuers = set(bond.issuer for bond, w in zip(self.universe, weights) if w > 1e-4)
+        num_issuers = len(issuers)
         
         # Calculate grade exposures
         grade_exposures = {}
@@ -316,7 +322,8 @@ class PortfolioOptimizer:
             'yield': portfolio_yield,
             'duration': portfolio_duration,
             'rating': portfolio_rating,
-            'number_of_securities': num_securities,
+            'num_securities': num_securities,
+            'num_issuers': num_issuers,
             **grade_exposures
         }
 

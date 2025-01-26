@@ -424,7 +424,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
     with col1:
         st.metric("Yield", f"{result.metrics['yield']:.2%}")
     with col2:
-        st.metric("Duration", f"{result.metrics['duration']:.4f}")
+        st.metric("Duration", f"{result.metrics['duration']:.2f}")
     with col3:
         rating_score = result.metrics['rating']
         rating = CreditRating.from_score(float(rating_score))
@@ -434,7 +434,8 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             help="Portfolio average rating calculated on a logarithmic scale where AAA=1, AA+=2, AA=3, etc. Lower score means better rating."
         )
     with col4:
-        st.metric("Number of Securities", f"{int(result.metrics['number_of_securities'])}")
+        st.metric("Number of Securities", f"{int(result.metrics['num_securities'])}")
+        st.metric("Number of Issuers", f"{int(result.metrics['num_issuers'])}")
 
     # Grade exposures
     st.subheader("Rating Grade Exposures")
