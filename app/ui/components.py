@@ -96,7 +96,7 @@ def render_main_constraints_form(universe: List[Bond]):
                 "Target Duration",
                 min_value=0.0,
                 max_value=30.0,
-                value=5.0,
+                value=3.0,
                 step=0.5
             )
         with col2:
@@ -115,7 +115,7 @@ def render_main_constraints_form(universe: List[Bond]):
                 "Minimum Rating",
                 options=list(CreditRating),
                 format_func=lambda x: x.display(),
-                index=len(CreditRating) - 3  # Default to BBB-
+                index=len(CreditRating) - 10  # Default to BBB-
             )
         with col2:
             rating_tolerance = st.number_input(
@@ -154,7 +154,7 @@ def render_main_constraints_form(universe: List[Bond]):
                 "Minimum Securities",
                 min_value=1,
                 max_value=100,
-                value=10,
+                value=1,
                 step=1
             )
         with col2:
@@ -185,7 +185,7 @@ def render_main_constraints_form(universe: List[Bond]):
                 min_value=0.0,
                 max_value=100.0,
                 value=0.0,
-                step=5.0,
+                step=0.0,
                 format="%.1f",
                 key="min_hy"
             ) / 100.0
@@ -204,7 +204,7 @@ def render_main_constraints_form(universe: List[Bond]):
                 "Maximum HY Position Size (%)",
                 min_value=0.0,
                 max_value=100.0,
-                value=5.0,
+                value=10.0,
                 step=0.1,
                 format="%.1f",
                 key="max_hy_position"
@@ -453,7 +453,26 @@ def render_constraints_form(universe: List[Bond]):
 
 
 def display_optimization_results(result: OptimizationResult, universe: List[Bond], total_size: float):
-    """Display optimization results in a formatted way"""
+    """Display optimization results"""
+    
+    # Create portfolio dataframe with non-zero weights
+    portfolio_df = pd.DataFrame([
+        {
+            'ISIN': bond.isin,
+            'Issuer': bond.issuer,
+            'Country': bond.country,
+            'Sector': bond.sector,
+            'Rating': bond.credit_rating.display(),
+            'Payment Rank': bond.payment_rank,
+            'Maturity': bond.maturity_date.strftime('%Y-%m-%d'),
+            'Yield': bond.ytm,
+            'Duration': bond.modified_duration,
+            'Weight': result.portfolio.get(bond.isin, 0),
+            'Market Value': result.portfolio.get(bond.isin, 0) * total_size
+        }
+        for bond in universe if result.portfolio.get(bond.isin, 0) > 0
+    ])
+
     if not result.success:
         st.error("Optimization failed to find a solution")
         if result.constraint_violations:
@@ -785,3 +804,21 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
         with col3:
             diff_pct = (total_rounded - total_target) / total_target * 100
             st.metric("Size Difference", f"{diff_pct:+.2f}%")
+
+    # Add PowerPoint download button
+    try:
+        with st.spinner('Generating PowerPoint presentation...'):
+            from .presentation import generate_portfolio_presentation
+            #st.info('Starting PowerPoint generation...')
+            pptx_stream = generate_portfolio_presentation(result, universe, total_size)
+            #st.success('Presentation ready for download!')
+            st.download_button(
+                label="Download as PowerPoint",
+                data=pptx_stream,
+                file_name="portfolio_analysis.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            )
+    except Exception as e:
+        st.error(f"Error generating PowerPoint: {str(e)}")
+        import traceback
+        st.error(traceback.format_exc())

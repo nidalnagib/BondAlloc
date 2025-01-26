@@ -271,14 +271,6 @@ def main():
                         portfolio_df['Min Piece'] = portfolio_df['Min Piece'].apply(lambda x: f"{x:,.2f}")
                         portfolio_df['Increment'] = portfolio_df['Increment'].apply(lambda x: f"{x:,.2f}")
                         
-                        # Convert to CSV
-                        csv = portfolio_df.to_csv(index=False)
-                        st.download_button(
-                            label="Download Portfolio as CSV",
-                            data=csv,
-                            file_name="optimal_portfolio.csv",
-                            mime="text/csv"
-                        )
                     else:
                         st.error(f"Optimization failed: {result.status}")
                         if result.constraint_violations:

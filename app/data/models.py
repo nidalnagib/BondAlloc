@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Tuple
 from datetime import datetime
 from enum import Enum
 
+
 class CreditRating(Enum):
     """Bond credit rating"""
     AAA = 1
@@ -27,26 +28,26 @@ class CreditRating(Enum):
     CC = 20
     C = 21
     D = 22
-    
+
     @classmethod
     def from_string(cls, rating: str) -> 'CreditRating':
         """Convert string rating to enum value"""
         # Remove any whitespace
         rating = rating.strip().upper()
-        
+
         # Handle modifiers
         rating = rating.replace('+', '_PLUS').replace('-', '_MINUS')
-        
+
         try:
             return cls[rating]
         except KeyError:
             raise ValueError(f"Invalid credit rating: {rating}")
-            
+
     def display(self) -> str:
         """Return rating in standard format (e.g., 'AA+', 'BBB-')"""
         name = self.name
         return name.replace('_PLUS', '+').replace('_MINUS', '-')
-        
+
     @staticmethod
     def from_score(score: float) -> 'CreditRating':
         """Convert a rating score back to a CreditRating enum"""
@@ -57,6 +58,7 @@ class CreditRating(Enum):
         """Check if rating is investment grade (BBB- or better)"""
         return self.value <= CreditRating.BBB_MINUS.value
 
+
 class RatingGrade(str, Enum):
     INVESTMENT_GRADE = "Investment Grade"
     HIGH_YIELD = "High Yield"
@@ -64,6 +66,7 @@ class RatingGrade(str, Enum):
     @staticmethod
     def from_rating(rating: CreditRating) -> 'RatingGrade':
         return RatingGrade.INVESTMENT_GRADE if rating.is_investment_grade() else RatingGrade.HIGH_YIELD
+
 
 class Bond(BaseModel):
     isin: str
@@ -86,6 +89,7 @@ class Bond(BaseModel):
     @property
     def rating_grade(self) -> RatingGrade:
         return RatingGrade.from_rating(self.credit_rating)
+
 
 class PortfolioConstraints(BaseModel):
     total_size: float = Field(..., description="Total portfolio size in base currency")
@@ -116,6 +120,7 @@ class PortfolioConstraints(BaseModel):
         default_factory=dict,
         description="Maximum exposure per maturity bucket (format: 'YYYY-YYYY')"
     )
+
 
 class OptimizationResult(BaseModel):
     success: bool = Field(..., description="Whether the optimization succeeded")
