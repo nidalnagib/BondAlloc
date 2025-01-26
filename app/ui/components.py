@@ -278,37 +278,17 @@ def render_optional_constraints(universe: List[Bond]):
                     key=f"sector_exposure_{i}"
                 ) / 100.0
             with col3:
+                st.write("")
+                st.write("")
                 if st.button("🗑️", key=f"remove_sector_{i}"):
                     remove_constraint_row('sector', i)
                     st.rerun()
             st.session_state.sector_constraints[i] = (sector, max_exposure)
         
         # Add new sector constraint
-        with st.form(key="add_sector_form"):
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                new_sector = st.selectbox(
-                    "New Sector",
-                    options=available_sectors,
-                    key="new_sector_input"
-                )
-            with col2:
-                new_sector_exposure = st.number_input(
-                    "Max Exposure (%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=20.0,
-                    step=0.1,
-                    format="%.1f",
-                    key="new_sector_exposure"
-                ) / 100.0
-            
-            if st.form_submit_button("Add Sector"):
-                if new_sector:
-                    add_constraint_row('sector', (new_sector, new_sector_exposure))
-                    st.rerun()
-                else:
-                    st.error("Please select a sector")
+        if st.button("Add Sector"):
+            add_constraint_row('sector', ("", 1.0))
+            st.rerun()
 
     # Payment rank constraints
     with st.expander("Payment Rank Constraints", expanded=False):
@@ -335,38 +315,18 @@ def render_optional_constraints(universe: List[Bond]):
                     key=f"rank_exposure_{i}"
                 ) / 100.0
             with col3:
+                st.write("")
+                st.write("")
                 if st.button("🗑️", key=f"remove_rank_{i}"):
                     remove_constraint_row('payment_rank', i)
                     st.rerun()
             st.session_state.payment_rank_constraints[i] = (rank, max_exposure)
         
         # Add new payment rank constraint
-        with st.form(key="add_rank_form"):
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                new_rank = st.selectbox(
-                    "New Payment Rank",
-                    options=available_payment_ranks,
-                    key="new_rank_input"
-                )
-            with col2:
-                new_rank_exposure = st.number_input(
-                    "Max Exposure (%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=20.0,
-                    step=0.1,
-                    format="%.1f",
-                    key="new_rank_exposure"
-                ) / 100.0
+        if st.button("Add Payment Rank"):
+            add_constraint_row('payment_rank', ("", 1.0))
+            st.rerun()
             
-            if st.form_submit_button("Add Payment Rank"):
-                if new_rank:
-                    add_constraint_row('payment_rank', (new_rank, new_rank_exposure))
-                    st.rerun()
-                else:
-                    st.error("Please select a payment rank")
-
     # Maturity bucket constraints
     with st.expander("Maturity Bucket Constraints", expanded=False):
         st.info("Add maximum exposure constraints for specific maturity buckets")
@@ -403,47 +363,17 @@ def render_optional_constraints(universe: List[Bond]):
                     key=f"maturity_exposure_{i}"
                 ) / 100.0
             with col4:
+                st.write("")
+                st.write("")
                 if st.button("🗑️", key=f"remove_maturity_{i}"):
                     remove_constraint_row('maturity_bucket', i)
                     st.rerun()
             st.session_state.maturity_bucket_constraints[i] = (start_year, end_year, max_exposure)
         
         # Add new maturity bucket constraint
-        with st.form(key="add_maturity_form"):
-            col1, col2, col3 = st.columns([1, 1, 1])
-            with col1:
-                new_start_year = st.number_input(
-                    "Start Year",
-                    min_value=2020,
-                    max_value=2050,
-                    value=2024,
-                    step=1,
-                    key="new_start_year"
-                )
-            with col2:
-                new_end_year = st.number_input(
-                    "End Year",
-                    min_value=new_start_year,
-                    max_value=2050,
-                    value=new_start_year + 1,
-                    step=1,
-                    key="new_end_year"
-                )
-            with col3:
-                new_maturity_exposure = st.number_input(
-                    "Max Exposure (%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=20.0,
-                    step=0.1,
-                    format="%.1f",
-                    key="new_maturity_exposure"
-                ) / 100.0
-            
-            if st.form_submit_button("Add Maturity Bucket"):
-                add_constraint_row('maturity_bucket', (new_start_year, new_end_year, new_maturity_exposure))
-                st.rerun()
-
+        if st.button("Add Maturity Bucket"):
+            add_constraint_row('maturity_bucket', (datetime.now().year, datetime.now().year+1, 1.0))
+            st.rerun()
 
 def render_constraints_form(universe: List[Bond]):
     """Render both main and optional constraints forms"""
@@ -543,12 +473,13 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             'isin': isin,
             'weight': weight,
             'country': bond.country,
-            'rating': bond.credit_rating.display(),
             'issuer': bond.issuer,
             'coupon': bond.coupon_rate,
             'maturity': bond.maturity_date,
+            'currency': bond.currency,
             'ytm': bond.ytm,
             'duration': bond.modified_duration,
+            'rating': bond.credit_rating.display(),
             'grade': bond.rating_grade.value,
             'payment_rank': bond.payment_rank,
             'target_notional': notional,
@@ -726,14 +657,25 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
         # Top 10 bonds
         st.subheader("Top 10 Bonds")
         top_bonds = df_portfolio.nlargest(10, 'weight')[
-            ['isin', 'issuer', 'coupon', 'maturity', 'ytm', 'weight', 'payment_rank']
+            ['isin', 'issuer', 'coupon', 'maturity', 'currency', 'ytm', 'weight', 'payment_rank']
         ].copy()
         top_bonds['coupon'] = top_bonds['coupon'].map('{:.2%}'.format)
         top_bonds['ytm'] = top_bonds['ytm'].map('{:.2%}'.format)
         top_bonds['weight'] = top_bonds['weight'].map('{:.2%}'.format)
         top_bonds['maturity'] = top_bonds['maturity'].dt.strftime('%Y-%m-%d')
 
-        st.dataframe(top_bonds, hide_index=True)
+        st.dataframe(top_bonds, 
+        column_config={
+            'isin': 'ISIN',
+            'issuer': 'Issuer',
+            'coupon': 'Coupon',
+            'ytm': 'YTM',
+            'weight': 'Weight',
+            'maturity': 'Maturity',
+            'currency':'Currency',
+            'payment_rank': 'Payment Rank'
+        },
+        hide_index=True)
 
     # Complete portfolio
     st.subheader("Complete Portfolio")
@@ -756,6 +698,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             'rating': 'Rating',
             'payment_rank': 'Payment Rank',
             'ytm': 'YTM',
+            'currency': 'Currency',
             'duration': 'Duration',
             'weight': 'Target Weight',
             'rounded_weight': 'Rounded Weight',
@@ -776,7 +719,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
     # Add CSV download button
     csv = df_display.to_csv(index=False).encode('utf-8')
     st.download_button(
-        "Download Portfolio as CSV",
+        "📝 Download Portfolio as CSV",
         csv,
         "portfolio.csv",
         "text/csv",
@@ -813,7 +756,7 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             pptx_stream = generate_portfolio_presentation(result, universe, total_size)
             #st.success('Presentation ready for download!')
             st.download_button(
-                label="Download as PowerPoint",
+                label="📺 Download as PowerPoint",
                 data=pptx_stream,
                 file_name="portfolio_analysis.pptx",
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
