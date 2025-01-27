@@ -16,6 +16,7 @@ from app.data.models import Bond, PortfolioConstraints, CreditRating, Optimizati
 from app.optimization.engine import OptimizationResult
 from app.utils.logging_config import setup_logging
 
+
 # Configure logger
 logger = setup_logging()
 
