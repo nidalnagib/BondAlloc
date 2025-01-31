@@ -116,8 +116,8 @@ def generate_portfolio_presentation(
             'Total Market Value': f"${total_size:,.2f}",
             'Number of Securities': f"{len(portfolio_df)}",
             'Number of Issuers': f"{portfolio_df['Issuer'].nunique()}",
-            'Average Duration': f"{result.metrics['duration']:.2f}", # TODO : Get from results
-            'Average Yield': f"{result.metrics['yield']:.2%}", # TODO : Get from results
+            'Average Duration': f"{result.metrics['duration']:.2f}", 
+            'Average Yield': f"{result.metrics['yield']:.2%}", 
             'Average Rating': f"{CreditRating.from_score(float(result.metrics['rating'])).display()}"
         }
 

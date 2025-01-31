@@ -250,7 +250,6 @@ def render_optional_constraints(universe: List[Bond]):
     available_sectors = sorted(list(set(bond.sector for bond in universe if bond.sector)))
     available_payment_ranks = sorted(list(set(bond.payment_rank for bond in universe if bond.payment_rank)))
     
-    st.markdown("---")
     st.subheader("Optional Constraints")
     
     # Sector constraints
@@ -379,6 +378,7 @@ def render_constraints_form(universe: List[Bond]):
     """Render both main and optional constraints forms"""
     constraints, run_optimization = render_main_constraints_form(universe)
     render_optional_constraints(universe)
+    st.markdown("---")
     return constraints, run_optimization
 
 
