@@ -140,6 +140,7 @@ def main():
                 df = pd.DataFrame([{
                     'ISIN': bond.isin,
                     'Price': f"{bond.clean_price:.2f}",
+                    'Currency': bond.currency,
                     'YTM': f"{bond.ytm:.2%}",
                     'Duration': f"{bond.modified_duration:.2f}",
                     'Maturity': bond.maturity_date.strftime('%Y-%m-%d'),

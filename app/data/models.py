@@ -5,7 +5,7 @@ from enum import Enum
 
 
 class CreditRating(Enum):
-    """Bond credit rating"""
+    """Bond credit rating in ascending risk order (AAA is lowest risk, D is highest risk)"""
     AAA = 1
     AA_PLUS = 2
     AA = 3
@@ -32,12 +32,12 @@ class CreditRating(Enum):
     @classmethod
     def from_string(cls, rating: str) -> 'CreditRating':
         """Convert string rating to enum value"""
-        # Remove any whitespace
+        # Remove any whitespace and convert to uppercase
         rating = rating.strip().upper()
-
+        
         # Handle modifiers
         rating = rating.replace('+', '_PLUS').replace('-', '_MINUS')
-
+        
         try:
             return cls[rating]
         except KeyError:
@@ -57,6 +57,56 @@ class CreditRating(Enum):
     def is_investment_grade(self) -> bool:
         """Check if rating is investment grade (BBB- or better)"""
         return self.value <= CreditRating.BBB_MINUS.value
+
+    def __lt__(self, other: 'CreditRating') -> bool:
+        """Less than comparison (lower value means lower risk)"""
+        if not isinstance(other, CreditRating):
+            return NotImplemented
+        return self.value < other.value
+
+    def __le__(self, other: 'CreditRating') -> bool:
+        """Less than or equal comparison"""
+        if not isinstance(other, CreditRating):
+            return NotImplemented
+        return self.value <= other.value
+
+    def __gt__(self, other: 'CreditRating') -> bool:
+        """Greater than comparison"""
+        if not isinstance(other, CreditRating):
+            return NotImplemented
+        return self.value > other.value
+
+    def __ge__(self, other: 'CreditRating') -> bool:
+        """Greater than or equal comparison"""
+        if not isinstance(other, CreditRating):
+            return NotImplemented
+        return self.value >= other.value
+
+    @classmethod
+    def get_ordered_ratings(cls) -> List['CreditRating']:
+        """Get list of ratings in ascending risk order (AAA to D)"""
+        return sorted(cls, key=lambda x: x.value)
+
+    @classmethod
+    def get_rating_range(cls, start: 'CreditRating', end: 'CreditRating') -> List['CreditRating']:
+        """Get list of ratings between start and end (inclusive) in ascending risk order"""
+        return [r for r in cls.get_ordered_ratings() if start.value <= r.value <= end.value]
+
+    @property
+    def next_rating(self) -> Optional['CreditRating']:
+        """Get next worse rating (higher risk). Returns None if already at D."""
+        try:
+            return CreditRating(self.value + 1)
+        except ValueError:
+            return None
+
+    @property
+    def prev_rating(self) -> Optional['CreditRating']:
+        """Get next better rating (lower risk). Returns None if already at AAA."""
+        try:
+            return CreditRating(self.value - 1)
+        except ValueError:
+            return None
 
 
 class RatingGrade(str, Enum):
