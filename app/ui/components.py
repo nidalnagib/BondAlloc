@@ -527,13 +527,21 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
         # Create two bar charts
         fig = go.Figure()
 
+        # Get ordered ratings for proper x-axis ordering
+        ordered_ratings = [r.display() for r in CreditRating.get_ordered_ratings()]
+        
         # Detailed rating breakdown
         rating_weights = df_portfolio.groupby('rating')['weight'].sum()
+        # Sort according to risk order, but only keep non-zero values
+        rating_weights = rating_weights.reindex(ordered_ratings)[rating_weights.reindex(ordered_ratings) > 0]
+        
         fig.add_trace(go.Bar(
             x=rating_weights.index,
             y=rating_weights.values * 100,
             name='By Rating',
-            visible=True
+            visible=True,
+            text=[f"{x:.1f}%" for x in rating_weights.values * 100],
+            textposition='outside',
         ))
 
         # IG/HY breakdown
@@ -542,13 +550,16 @@ def display_optimization_results(result: OptimizationResult, universe: List[Bond
             x=grade_weights.index,
             y=grade_weights.values * 100,
             name='By Grade',
-            visible=False
+            visible=False,
+            text=[f"{x:.1f}%" for x in grade_weights.values * 100],
+            textposition='outside',
         ))
 
         # Add buttons to switch between views
         fig.update_layout(
             title='Rating Breakdown',
             yaxis_title='Weight (%)',
+            xaxis_title='Credit Rating',
             updatemenus=[{
                 'buttons': [
                     {'label': 'By Rating', 'method': 'update', 'args': [{'visible': [True, False]}]},
